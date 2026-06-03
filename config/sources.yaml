@@ -1,0 +1,101 @@
+sources:
+  clinicaltrials:
+    type: api
+    url: https://clinicaltrials.gov/api/v2/studies
+    tier: A
+    cadence: daily
+  fda_pcac_2026:
+    type: page
+    url: https://www.fda.gov/advisory-committees/advisory-committee-calendar/july-23-24-2026-meeting-pharmacy-compounding-advisory-committee-07232026
+    tier: A
+    cadence: daily
+  fda_503a_pdf:
+    type: pdf
+    url: https://www.fda.gov/media/94155/download
+    tier: A
+    cadence: weekly
+  federal_register:
+    type: api
+    url: https://www.federalregister.gov/api/v1/documents.json
+    tier: A
+    cadence: daily
+  sec_edgar:
+    type: api
+    url: https://data.sec.gov/
+    tier: A
+    cadence: daily
+  pubmed:
+    type: api
+    url: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/
+    tier: A
+    cadence: weekly
+  precision_peptide_otc:
+    type: page
+    url: https://www.otcmarkets.com/stock/PNGAF/overview
+    tier: B
+    cadence: daily
+  precision_peptide_cse:
+    type: page
+    url: https://thecse.com/listings/the-precision-peptide-company-inc/news-releases/
+    tier: B
+    cadence: daily
+  pharmather_otc:
+    type: page
+    url: https://www.otcmarkets.com/stock/PHRRF/overview
+    tier: B
+    cadence: daily
+  pharmather_news:
+    type: page
+    url: https://www.pharmather.com/news
+    tier: B
+    cadence: daily
+  mma_inc_news:
+    type: page
+    url: https://www.mma.inc/news
+    tier: B
+    cadence: daily
+  hims_ir_news:
+    type: page
+    url: https://investors.hims.com/news/default.aspx
+    tier: A/B
+    cadence: daily
+  lifemd_ir_news:
+    type: page
+    url: https://ir.lifemd.com/
+    tier: B
+    cadence: daily
+  clinicaltrials_hudson_bpc:
+    type: page
+    url: https://clinicaltrials.gov/study/NCT07437547
+    tier: A
+    cadence: daily
+  clinicaltrials_hudson_tb500:
+    type: page
+    url: https://clinicaltrials.gov/study/NCT07487363
+    tier: A
+    cadence: daily
+  clinicaltrials_hudson_motsc:
+    type: page
+    url: https://clinicaltrials.gov/study/NCT07505745
+    tier: A
+    cadence: daily
+  cse_precision_peptide:
+    type: page
+    url: https://thecse.com/listings/the-precision-peptide-company-inc/news-releases/
+    tier: B
+    cadence: daily
+  sedar_plus:
+    type: page
+    url: https://www.sedarplus.ca/
+    tier: A
+    cadence: weekly
+  wipo_patentscope_rss:
+    type: rss
+    url: https://patentscope.wipo.int/search/en/structuredSearch.jsf
+    tier: A
+    cadence: weekly
+  uspto_assignment:
+    type: page
+    url: https://assignmentcenter.uspto.gov/
+    tier: A
+    cadence: weekly

@@ -1,0 +1,45 @@
+peptides:
+  - id: bpc_157
+    name: BPC-157
+    primary: true
+    aliases: ["BPC-157", "BPC 157", "pentadecapeptide BPC", "PL-10", "PLD-116", "PL 14736", "bepecin"]
+  - id: tb_500
+    name: TB-500
+    primary: true
+    aliases: ["TB-500", "TB500", "LKKTETQ", "thymosin beta-4 fragment", "Tβ4 fragment"]
+  - id: thymosin_beta_4
+    name: Thymosin beta-4 / timbetasin
+    primary: true
+    aliases: ["thymosin beta-4", "thymosin β4", "Tβ4", "timbetasin", "RGN-259", "RGN-137", "RGN-352"]
+  - id: ghk_cu
+    name: GHK-Cu
+    primary: true
+    aliases: ["GHK-Cu", "Cu-GHK", "copper tripeptide-1", "glycyl-L-histidyl-L-lysine copper", "prezatide copper acetate"]
+  - id: kpv
+    name: KPV
+    primary: false
+    aliases: ["KPV", "KPV acetate"]
+  - id: mots_c
+    name: MOTS-c
+    primary: false
+    aliases: ["MOTS-c", "MOTs-C", "CB4211"]
+  - id: semax
+    name: Semax
+    primary: false
+    aliases: ["Semax", "Semax acetate"]
+  - id: epitalon
+    name: Epitalon
+    primary: false
+    aliases: ["Epitalon", "Epitalon acetate", "Epithalon"]
+  - id: ll_37
+    name: LL-37
+    primary: false
+    aliases: ["LL-37", "ropocamptide", "cathelicidin"]
+  - id: thymosin_alpha_1
+    name: Thymosin alpha-1
+    primary: false
+    aliases: ["thymosin alpha-1", "thymalfasin", "Zadaxin"]
+  - id: emideltide
+    name: Emideltide / DSIP-related
+    primary: false
+    aliases: ["emideltide", "DSIP", "delta sleep inducing peptide"]

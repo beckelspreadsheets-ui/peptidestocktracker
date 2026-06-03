@@ -1,0 +1,30 @@
+severity_rules:
+  critical:
+    - new_recruiting_trial
+    - phase_advancement
+    - positive_pivotal_data
+    - fda_positive_category_change
+    - licensing_deal_with_public_company
+    - patent_assignment_to_public_company
+  high:
+    - trial_status_change
+    - fda_briefing_document_posted
+    - patent_publication
+    - sec_filing_target_mention
+  medium:
+    - company_press_release_target_mention
+    - commercial_launch_claim
+    - conference_abstract
+    - pubmed_publication
+  low:
+    - blog_mention
+    - cosmetic_product_mention
+    - ai_report_claim
+confidence_rules:
+  source_tier_A: high
+  source_tier_B: medium
+  source_tier_C: low
+review_defaults:
+  ai_report_claim: needs_review
+  microcap_press_release: needs_review
+  company_press_release_target_mention: needs_review

@@ -1,0 +1,163 @@
+companies:
+- id: regentree
+  name: ReGenTree LLC
+  public_private: private
+  tier: 1
+  relationship: RGN-259 sponsor/developer
+  peptides:
+  - thymosin_beta_4
+  confidence: high
+- id: hlb_therapeutics
+  name: HLB Therapeutics
+  ticker: '115450'
+  exchange: KOSDAQ
+  public_private: public_non_us
+  tier: 1
+  relationship: ReGenTree partner/funder; RGN-259 exposure
+  peptides:
+  - thymosin_beta_4
+  confidence: high
+- id: regenerx
+  name: RegeneRx Biopharmaceuticals
+  ticker: RGRX
+  exchange: OTC
+  public_private: public_us_otc
+  tier: 1
+  relationship: "T\u03B24/RGN IP and economics"
+  peptides:
+  - thymosin_beta_4
+  confidence: high
+  liquidity_risk: extreme
+- id: hudson_biotech
+  name: Hudson Biotech
+  public_private: private
+  tier: 1
+  relationship: BPC-157/TB-500/MOTS-c clinical sponsor leads
+  peptides:
+  - bpc_157
+  - tb_500
+  - mots_c
+  confidence: medium_high
+- id: diagen
+  name: Diagen d.o.o.
+  public_private: private
+  tier: 1
+  relationship: BPC-157 stable salt patent assignee
+  peptides:
+  - bpc_157
+  confidence: high
+- id: hims
+  name: Hims & Hers Health
+  ticker: HIMS
+  exchange: NYSE
+  public_private: public_us
+  tier: 2
+  relationship: Peptide facility; potential telehealth/compounding/longevity channel
+  peptides:
+  - bpc_157
+  - tb_500
+  - ghk_cu
+  - kpv
+  - mots_c
+  - semax
+  - epitalon
+  confidence: medium
+  note: Indirect; verify specific product/formulary claims.
+- id: lifemd
+  name: LifeMD
+  ticker: LFMD
+  exchange: NASDAQ
+  public_private: public_us
+  tier: 2
+  relationship: Telehealth and affiliated 503A/compounding infrastructure
+  peptides:
+  - bpc_157
+  - tb_500
+  - ghk_cu
+  - kpv
+  - mots_c
+  confidence: medium_low
+  note: Indirect; verify specific peptide language.
+- id: precision_peptide
+  name: The Precision Peptide Company
+  ticker: PNGAF / BPC
+  exchange: OTCQB / CSE
+  public_private: public_otc_canada
+  tier: 2
+  relationship: BPC-157 transdermal patch commercial microcap claim
+  peptides:
+  - bpc_157
+  confidence: medium
+  liquidity_risk: extreme
+- id: pharmather
+  name: PharmaTher Holdings
+  ticker: PHRRF / PHRM
+  exchange: OTCQB / CSE
+  public_private: public_otc_canada
+  tier: 2
+  relationship: Microneedle/transdermal peptide delivery patent/platform
+  peptides:
+  - bpc_157
+  - ghk_cu
+  - tb_500
+  - kpv
+  confidence: medium
+  liquidity_risk: extreme
+- id: bachem
+  name: Bachem Holding AG
+  ticker: BANB
+  exchange: SIX
+  public_private: public_non_us
+  tier: 2
+  relationship: Peptide API/CDMO supplier
+  peptides:
+  - multiple
+  confidence: medium
+- id: polypeptide
+  name: PolyPeptide Group
+  ticker: PPGN
+  exchange: SIX
+  public_private: public_non_us
+  tier: 2
+  relationship: Peptide API/CDMO supplier
+  peptides:
+  - multiple
+  confidence: medium
+- id: harrow
+  name: Harrow
+  ticker: HROW
+  exchange: NASDAQ
+  public_private: public_us
+  tier: 2
+  relationship: Ophthalmology/compounding infrastructure
+  peptides:
+  - thymosin_beta_4
+  confidence: low_medium
+- id: tuhura_cohbar_legacy
+  name: TuHURA / CohBar legacy / Morphogenesis CVR
+  ticker: HURA / CVR
+  exchange: NASDAQ / private CVR
+  public_private: mixed
+  tier: 2
+  relationship: Legacy MOTS-c analog CB4211/CVR angle
+  peptides:
+  - mots_c
+  confidence: medium_low
+- id: pmd_promore
+  name: PMD / Promore / Pergasus AB
+  ticker: PMDS
+  exchange: Stockholm
+  public_private: public_non_us
+  tier: 3
+  relationship: Legacy LL-37/ropocamptide asset
+  peptides:
+  - ll_37
+  confidence: low_medium
+- id: neova_skinbiology
+  name: NEOVA / Pharma Cosmetics / Skin Biology / ProCyte legacy
+  public_private: private_or_legacy
+  tier: 3
+  relationship: GHK-Cu cosmetic and historical IP ecosystem
+  peptides:
+  - ghk_cu
+  confidence: medium

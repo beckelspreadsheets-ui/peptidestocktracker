@@ -1,0 +1,38 @@
+queries:
+  bpc_157:
+  - '"BPC-157" OR "BPC 157" OR "PL-10" OR "PLD-116" OR "PL 14736" OR "pentadecapeptide
+    BPC"'
+  - '"BPC-157" "transdermal patch"'
+  - '"BPC-157" "503A" FDA PCAC'
+  tb_500:
+  - '"TB-500" OR LKKTETQ OR "thymosin beta-4 fragment"'
+  thymosin_beta_4:
+  - "\"RGN-259\" OR timbetasin OR \"thymosin beta 4\" OR \"thymosin \u03B24\""
+  ghk_cu:
+  - '"GHK-Cu" OR "copper tripeptide-1" OR "prezatide copper acetate"'
+  commercial_microcaps:
+  - '"Precision Peptide" OR PNGAF OR "CSE:BPC"'
+  - '"PharmaTher" OR PHRRF OR "CSE:PHRM"'
+  - '"MMA.INC" "Precision Peptide" peptide'
+  sec_keywords:
+  - '"BPC-157" OR "RGN-259" OR "thymosin beta 4" OR "GHK-Cu" OR "MOTS-c" OR "CB4211"
+    OR "LL-37"'
+  hims_lifemd:
+  - '"Hims" OR "Hims & Hers" peptide facility peptide compounding'
+  - HIMS "peptides" "compounding"
+  - LFMD OR LifeMD peptide compounding 503A pharmacy
+  hudson_biotech:
+  - '"Hudson Biotech" "BPC-157"'
+  - '"Hudson Biotech" "TB-500"'
+  - '"Hudson Biotech" "MOTS-c"'
+  mots_c:
+  - '"MOTS-c" OR "MOTs-C" OR "CB4211"'
+  - '"CohBar" "CB4211" "MOTS-c"'
+  - '"NCT07505745" OR "MOTS-c" "Hudson Biotech"'
+  patent_delivery:
+  - '"PharmaPatch" "BPC-157"'
+  - '"64/034,315" peptide microneedle'
+  - '"Stabilized Peptide Compositions" "Microneedle"'
+  pcac_docket:
+  - '"FDA-2025-N-6895" "BPC-157"'
+  - '"Pharmacy Compounding Advisory Committee" "MOTs-C" "Semax" "Epitalon"'

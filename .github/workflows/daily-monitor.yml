@@ -1,0 +1,12 @@
+name: daily-monitor
+on:
+  schedule:
+    - cron: '20 16 * * *'
+  workflow_dispatch:
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Placeholder
+        run: echo "Implement after source adapters exist"
