@@ -12,6 +12,7 @@ dependencies = [
   "beautifulsoup4>=4",
   "feedparser>=6",
   "python-dateutil>=2",
+  "pypdf>=5",
 ]
 
 [project.optional-dependencies]
@@ -19,6 +20,12 @@ dev = ["pytest>=8", "ruff>=0.5"]
 
 [project.scripts]
 peptide-watch = "peptide_watch.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/peptide_watch"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
 
 [build-system]
 requires = ["hatchling"]

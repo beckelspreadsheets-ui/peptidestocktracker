@@ -103,6 +103,17 @@ companies:
   - kpv
   confidence: medium
   liquidity_risk: extreme
+- id: mma_inc
+  name: MMA.INC
+  ticker: MMA
+  exchange: NYSE American
+  public_private: public_us
+  tier: 3
+  relationship: Precision Peptide marketing/revenue-share partner claim
+  peptides:
+  - bpc_157
+  confidence: low_medium
+  note: Indirect partnership claim; verify materiality and terms in filings.
 - id: bachem
   name: Bachem Holding AG
   ticker: BANB

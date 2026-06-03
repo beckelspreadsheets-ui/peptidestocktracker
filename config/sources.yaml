@@ -14,6 +14,11 @@ sources:
     url: https://www.fda.gov/media/94155/download
     tier: A
     cadence: weekly
+  fda_safety_risk:
+    type: page
+    url: https://www.fda.gov/drugs/compounding/safety-risks-associated-certain-bulk-drug-substances-nominated-use-compounding
+    tier: A
+    cadence: weekly
   federal_register:
     type: api
     url: https://www.federalregister.gov/api/v1/documents.json
@@ -34,36 +39,43 @@ sources:
     url: https://www.otcmarkets.com/stock/PNGAF/overview
     tier: B
     cadence: daily
+    company_id: precision_peptide
   precision_peptide_cse:
     type: page
     url: https://thecse.com/listings/the-precision-peptide-company-inc/news-releases/
     tier: B
     cadence: daily
+    company_id: precision_peptide
   pharmather_otc:
     type: page
     url: https://www.otcmarkets.com/stock/PHRRF/overview
     tier: B
     cadence: daily
+    company_id: pharmather
   pharmather_news:
     type: page
     url: https://www.pharmather.com/news
     tier: B
     cadence: daily
+    company_id: pharmather
   mma_inc_news:
     type: page
     url: https://www.mma.inc/news
     tier: B
     cadence: daily
+    company_id: mma_inc
   hims_ir_news:
     type: page
     url: https://investors.hims.com/news/default.aspx
     tier: A/B
     cadence: daily
+    company_id: hims
   lifemd_ir_news:
     type: page
     url: https://ir.lifemd.com/
     tier: B
     cadence: daily
+    company_id: lifemd
   clinicaltrials_hudson_bpc:
     type: page
     url: https://clinicaltrials.gov/study/NCT07437547
@@ -79,11 +91,22 @@ sources:
     url: https://clinicaltrials.gov/study/NCT07505745
     tier: A
     cadence: daily
+  clinicaltrials_regentree_rgn259:
+    type: page
+    url: https://clinicaltrials.gov/study/NCT05555589
+    tier: A
+    cadence: daily
+  clinicaltrials_cohbar_cb4211:
+    type: page
+    url: https://clinicaltrials.gov/study/NCT03998514
+    tier: A
+    cadence: daily
   cse_precision_peptide:
     type: page
     url: https://thecse.com/listings/the-precision-peptide-company-inc/news-releases/
     tier: B
     cadence: daily
+    company_id: precision_peptide
   sedar_plus:
     type: page
     url: https://www.sedarplus.ca/
