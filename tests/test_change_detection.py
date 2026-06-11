@@ -47,7 +47,7 @@ class FakeFdaClient:
         self.bodies = bodies
         self.broken = broken or set()
 
-    def fetch(self, url: str) -> FetchedFdaContent:
+    def fetch(self, url: str, **kwargs) -> FetchedFdaContent:
         if url in self.broken:
             raise ConnectionError(f"fetch failed: {url}")
         return FetchedFdaContent(url=url, content_type="text/html", body=self.bodies[url])

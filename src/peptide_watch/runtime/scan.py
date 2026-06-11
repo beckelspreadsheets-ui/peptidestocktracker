@@ -21,48 +21,70 @@ LOCKFILE_NAME = "peptide_watch.lock"
 
 Scanner = Callable[[Path, Path, str], Any]
 
+SCANNER_REGISTRY: dict[str, Scanner] = {}
+
 
 class ScanLocked(RuntimeError):
     """Another scan already holds the lockfile."""
 
 
+def register_scanner(name: str) -> Callable[[Scanner], Scanner]:
+    """Register a source-family scan entrypoint under a stable id.
+
+    A new source family is added by writing its scan function and
+    registering it here — the scan loop, ledger, and CLI pick it up.
+    """
+
+    def decorator(func: Scanner) -> Scanner:
+        if name in SCANNER_REGISTRY:
+            raise ValueError(f"scanner already registered: {name}")
+        SCANNER_REGISTRY[name] = func
+        return func
+
+    return decorator
+
+
+@register_scanner("clinicaltrials")
 def _scan_clinicaltrials(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """Official ClinicalTrials.gov API v2 records for configured aliases and NCT IDs."""
     from peptide_watch.sources.clinicaltrials import scan_clinicaltrials
 
     return scan_clinicaltrials(db_path, config_dir=config_dir, run_id=run_id)
 
 
+@register_scanner("fda")
 def _scan_fda(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """Official FDA PCAC, 503A, and safety-risk page/PDF sources."""
     from peptide_watch.sources.fda import scan_fda_sources
 
     return scan_fda_sources(db_path, config_dir=config_dir, run_id=run_id)
 
 
+@register_scanner("federal_register")
 def _scan_federal_register(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """Official Federal Register FDA notices for configured queries."""
     from peptide_watch.sources.federal_register import scan_federal_register
 
     return scan_federal_register(db_path, config_dir=config_dir, run_id=run_id)
 
 
+@register_scanner("company_pages")
 def _scan_company_pages(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """Public company IR/news/page sources from config."""
     from peptide_watch.sources.company_pages import scan_company_pages
 
     return scan_company_pages(db_path, config_dir=config_dir, run_id=run_id)
 
 
+@register_scanner("sec_edgar")
 def _scan_sec(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """Recent public SEC EDGAR filings for configured companies."""
     from peptide_watch.sources.sec import scan_sec_filings
 
     return scan_sec_filings(db_path, config_dir=config_dir, run_id=run_id)
 
 
-DEFAULT_SCANNERS: dict[str, Scanner] = {
-    "clinicaltrials": _scan_clinicaltrials,
-    "fda": _scan_fda,
-    "federal_register": _scan_federal_register,
-    "company_pages": _scan_company_pages,
-    "sec_edgar": _scan_sec,
-}
+DEFAULT_SCANNERS: dict[str, Scanner] = SCANNER_REGISTRY
 
 
 class JsonLogFormatter(logging.Formatter):

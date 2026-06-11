@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
-import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
-from urllib.request import Request, urlopen
 
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict
@@ -18,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from peptide_watch.config import CompanyConfig, WatchConfig, load_config
 from peptide_watch.database import init_db
 from peptide_watch.events import ad_hoc_run_id
+from peptide_watch.net.client import DEFAULT_USER_AGENT, HttpClient
 from peptide_watch.sources.company_documents import (
     CompanyDocument,
     CompanyMonitorScanResult,
@@ -57,35 +54,36 @@ class FetchedSecFiling(BaseModel):
     body: bytes
 
 
-@dataclass(frozen=True)
 class SecEdgarClient:
-    """SEC EDGAR client with explicit public-source user-agent and rate limiting."""
+    """SEC EDGAR client on the shared HTTP layer with an honest user-agent."""
 
-    data_base_url: str = SEC_DATA_BASE_URL
-    archives_base_url: str = SEC_ARCHIVES_BASE_URL
-    timeout: float = 30.0
-    rate_limit_seconds: float = 0.2
-    user_agent: str = os.environ.get(
-        "PEPTIDE_WATCH_SEC_USER_AGENT",
-        "peptide-watch/0.1 public-source research",
-    )
+    def __init__(
+        self,
+        *,
+        data_base_url: str = SEC_DATA_BASE_URL,
+        archives_base_url: str = SEC_ARCHIVES_BASE_URL,
+        timeout: float = 30.0,
+        rate_limit_seconds: float = 0.2,
+        user_agent: str | None = None,
+        http: HttpClient | None = None,
+    ) -> None:
+        self.data_base_url = data_base_url
+        self.archives_base_url = archives_base_url
+        resolved_user_agent = user_agent or os.environ.get(
+            "PEPTIDE_WATCH_SEC_USER_AGENT", DEFAULT_USER_AGENT
+        )
+        self._http = http or HttpClient(
+            timeout=timeout,
+            rate_limit_seconds=rate_limit_seconds,
+            user_agent=resolved_user_agent,
+        )
 
     def get_company_tickers(self) -> dict[str, dict[str, Any]]:
-        request = self._request(f"{self.data_base_url}/files/company_tickers.json")
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
-        finally:
-            self._sleep()
+        return self._http.get_json(f"{self.data_base_url}/files/company_tickers.json")
 
     def get_submissions(self, cik: str) -> dict[str, Any]:
         padded_cik = _pad_cik(cik)
-        request = self._request(f"{self.data_base_url}/submissions/CIK{padded_cik}.json")
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
-        finally:
-            self._sleep()
+        return self._http.get_json(f"{self.data_base_url}/submissions/CIK{padded_cik}.json")
 
     def get_filing_text(
         self,
@@ -97,29 +95,10 @@ class SecEdgarClient:
         accession_path = accession_number.replace("-", "")
         primary_path = quote(primary_document)
         url = f"{self.archives_base_url}/{cik_int}/{accession_path}/{primary_path}"
-        request = self._request(url, accept="text/html,text/plain,*/*")
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                content_type = response.headers.get("content-type", "")
-                body = response.read()
-                final_url = response.geturl()
-        finally:
-            self._sleep()
-        return FetchedSecFiling(url=final_url, content_type=content_type, body=body)
-
-    def _request(self, url: str, *, accept: str = "application/json,*/*") -> Request:
-        return Request(
-            url,
-            headers={
-                "Accept": accept,
-                "User-Agent": self.user_agent,
-            },
+        result = self._http.get(url, accept="text/html,text/plain,*/*")
+        return FetchedSecFiling(
+            url=result.url, content_type=result.content_type, body=result.body
         )
-
-    def _sleep(self) -> None:
-        if self.rate_limit_seconds > 0:
-            time.sleep(self.rate_limit_seconds)
-
 
 def scan_sec_filings(
     db_path: str | Path,

@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import io
-import time
-from dataclasses import dataclass
 from pathlib import Path
-from urllib.request import Request, urlopen
 
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
 from pypdf import PdfReader
 
 from peptide_watch.config import SourceConfig, WatchConfig, load_config
+from peptide_watch.cursors import get_cursor, save_cursor, touch_cursor
 from peptide_watch.database import init_db
 from peptide_watch.events import ad_hoc_run_id
+from peptide_watch.net.client import DEFAULT_USER_AGENT, HttpClient
 from peptide_watch.sources.regulatory import (
     RegulatoryDocument,
     RegulatoryScanResult,
@@ -34,33 +33,47 @@ class FetchedFdaContent(BaseModel):
     url: str
     content_type: str
     body: bytes
+    etag: str | None = None
+    last_modified: str | None = None
+    not_modified: bool = False
 
 
-@dataclass(frozen=True)
 class FdaClient:
-    """FDA public page/PDF client with explicit rate limiting."""
+    """FDA public page/PDF client on the shared HTTP layer."""
 
-    timeout: float = 30.0
-    rate_limit_seconds: float = 0.2
-    user_agent: str = "peptide-watch/0.1 public-source research"
-
-    def fetch(self, url: str) -> FetchedFdaContent:
-        request = Request(
-            url,
-            headers={
-                "Accept": "text/html,application/pdf,*/*",
-                "User-Agent": self.user_agent,
-            },
+    def __init__(
+        self,
+        *,
+        timeout: float = 30.0,
+        rate_limit_seconds: float = 0.2,
+        user_agent: str = DEFAULT_USER_AGENT,
+        http: HttpClient | None = None,
+    ) -> None:
+        self._http = http or HttpClient(
+            timeout=timeout, rate_limit_seconds=rate_limit_seconds, user_agent=user_agent
         )
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                content_type = response.headers.get("content-type", "")
-                body = response.read()
-                final_url = response.geturl()
-        finally:
-            if self.rate_limit_seconds > 0:
-                time.sleep(self.rate_limit_seconds)
-        return FetchedFdaContent(url=final_url, content_type=content_type, body=body)
+
+    def fetch(
+        self,
+        url: str,
+        *,
+        etag: str | None = None,
+        last_modified: str | None = None,
+    ) -> FetchedFdaContent:
+        result = self._http.get(
+            url,
+            accept="text/html,application/pdf,*/*",
+            etag=etag,
+            last_modified=last_modified,
+        )
+        return FetchedFdaContent(
+            url=result.url,
+            content_type=result.content_type,
+            body=result.body,
+            etag=result.etag,
+            last_modified=result.last_modified,
+            not_modified=result.not_modified,
+        )
 
 
 def scan_fda_sources(
@@ -88,10 +101,25 @@ def scan_fda_sources(
     try:
         for source_id, source in selected.items():
             try:
-                fetched_content = api_client.fetch(source.url)
+                cursor = get_cursor(connection, source_id)
+                fetched_content = api_client.fetch(
+                    source.url,
+                    etag=cursor.etag if cursor else None,
+                    last_modified=cursor.last_modified if cursor else None,
+                )
                 fetched += 1
+                if fetched_content.not_modified:
+                    touch_cursor(connection, source_id)
+                    connection.commit()
+                    continue
                 document = normalize_fda_document(source_id, source, fetched_content, config)
                 result = write_regulatory_document(connection, document, run_id=run_id)
+                save_cursor(
+                    connection,
+                    source_id,
+                    etag=fetched_content.etag,
+                    last_modified=fetched_content.last_modified,
+                )
                 connection.commit()
             except (KeyboardInterrupt, SystemExit):
                 raise

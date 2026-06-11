@@ -35,7 +35,7 @@ class FakeFdaClient:
     def __init__(self, body: bytes) -> None:
         self.body = body
 
-    def fetch(self, url: str) -> FetchedFdaContent:
+    def fetch(self, url: str, **kwargs) -> FetchedFdaContent:
         return FetchedFdaContent(url=url, content_type="text/html", body=self.body)
 
 

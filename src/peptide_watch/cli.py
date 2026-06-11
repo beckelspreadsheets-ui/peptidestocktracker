@@ -190,6 +190,17 @@ def runs_show(
             typer.echo(f"    error: {last_line}")
 
 
+@app.command("list-adapters")
+def list_adapters() -> None:
+    """List registered source-family adapters."""
+
+    from peptide_watch.runtime.scan import SCANNER_REGISTRY
+
+    for name in sorted(SCANNER_REGISTRY):
+        doc = (SCANNER_REGISTRY[name].__doc__ or "").strip().splitlines()
+        typer.echo(f"{name}: {doc[0] if doc else ''}")
+
+
 @app.command("backup-db")
 def backup_db(
     db: Path = typer.Option(

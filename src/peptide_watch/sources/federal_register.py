@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import json
-import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 from peptide_watch.config import WatchConfig, load_config
 from peptide_watch.database import init_db
 from peptide_watch.events import ad_hoc_run_id
+from peptide_watch.net.client import DEFAULT_USER_AGENT, HttpClient
 from peptide_watch.sources.regulatory import (
     RegulatoryDocument,
     RegulatoryScanResult,
@@ -29,14 +26,22 @@ FEDERAL_REGISTER_BASE_URL = "https://www.federalregister.gov/api/v1"
 FEDERAL_REGISTER_SOURCE_ID = "federal_register"
 
 
-@dataclass(frozen=True)
 class FederalRegisterClient:
-    """Federal Register public API client with explicit rate limiting."""
+    """Federal Register public API client on the shared HTTP layer."""
 
-    base_url: str = FEDERAL_REGISTER_BASE_URL
-    timeout: float = 30.0
-    rate_limit_seconds: float = 0.2
-    user_agent: str = "peptide-watch/0.1 public-source research"
+    def __init__(
+        self,
+        *,
+        base_url: str = FEDERAL_REGISTER_BASE_URL,
+        timeout: float = 30.0,
+        rate_limit_seconds: float = 0.2,
+        user_agent: str = DEFAULT_USER_AGENT,
+        http: HttpClient | None = None,
+    ) -> None:
+        self.base_url = base_url
+        self._http = http or HttpClient(
+            timeout=timeout, rate_limit_seconds=rate_limit_seconds, user_agent=user_agent
+        )
 
     def search_documents(self, query: str, *, per_page: int = 20) -> list[dict[str, Any]]:
         if per_page < 1 or per_page > 1000:
@@ -56,31 +61,10 @@ class FederalRegisterClient:
         return self._get_json(f"/documents/{document_number}.json")
 
     def get_text(self, url: str) -> str:
-        request = Request(
-            url,
-            headers={"Accept": "text/plain,*/*", "User-Agent": self.user_agent},
-        )
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                return response.read().decode("utf-8", errors="ignore")
-        finally:
-            if self.rate_limit_seconds > 0:
-                time.sleep(self.rate_limit_seconds)
+        return self._http.get_text(url)
 
     def _get_json(self, path: str, params: dict[str, str | int] | None = None) -> dict[str, Any]:
-        url = f"{self.base_url}{path}"
-        if params:
-            url = f"{url}?{urlencode(params)}"
-        request = Request(
-            url,
-            headers={"Accept": "application/json", "User-Agent": self.user_agent},
-        )
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
-        finally:
-            if self.rate_limit_seconds > 0:
-                time.sleep(self.rate_limit_seconds)
+        return self._http.get_json(f"{self.base_url}{path}", params=params)
 
 
 def scan_federal_register(

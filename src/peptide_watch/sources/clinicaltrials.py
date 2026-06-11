@@ -6,18 +6,15 @@ import hashlib
 import json
 import re
 import sqlite3
-import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from peptide_watch.config import WatchConfig, load_config
 from peptide_watch.database import connect, init_db
 from peptide_watch.events import ad_hoc_run_id, insert_event
+from peptide_watch.net.client import DEFAULT_USER_AGENT, HttpClient
 
 CLINICALTRIALS_BASE_URL = "https://clinicaltrials.gov/api/v2"
 CLINICALTRIALS_SOURCE_ID = "clinicaltrials"
@@ -88,14 +85,22 @@ class ScanResult(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
-@dataclass(frozen=True)
 class ClinicalTrialsClient:
-    """Small ClinicalTrials.gov API v2 client with explicit rate limiting."""
+    """Small ClinicalTrials.gov API v2 client on the shared HTTP layer."""
 
-    base_url: str = CLINICALTRIALS_BASE_URL
-    timeout: float = 20.0
-    rate_limit_seconds: float = 0.2
-    user_agent: str = "peptide-watch/0.1 public-source research"
+    def __init__(
+        self,
+        *,
+        base_url: str = CLINICALTRIALS_BASE_URL,
+        timeout: float = 20.0,
+        rate_limit_seconds: float = 0.2,
+        user_agent: str = DEFAULT_USER_AGENT,
+        http: HttpClient | None = None,
+    ) -> None:
+        self.base_url = base_url
+        self._http = http or HttpClient(
+            timeout=timeout, rate_limit_seconds=rate_limit_seconds, user_agent=user_agent
+        )
 
     def get_version(self) -> dict[str, Any]:
         return self._get_json("/version")
@@ -133,22 +138,7 @@ class ClinicalTrialsClient:
         return studies
 
     def _get_json(self, path: str, params: dict[str, str | int] | None = None) -> dict[str, Any]:
-        url = f"{self.base_url}{path}"
-        if params:
-            url = f"{url}?{urlencode(params)}"
-        request = Request(
-            url,
-            headers={
-                "Accept": "application/json",
-                "User-Agent": self.user_agent,
-            },
-        )
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
-        finally:
-            if self.rate_limit_seconds > 0:
-                time.sleep(self.rate_limit_seconds)
+        return self._http.get_json(f"{self.base_url}{path}", params=params)
 
 
 def normalize_study(

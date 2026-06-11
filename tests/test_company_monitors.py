@@ -37,7 +37,7 @@ mentions BPC-157 only as a monitored target term for this test filing.
 
 
 class FakeCompanyPageClient:
-    def fetch(self, url: str) -> FetchedCompanyPage:
+    def fetch(self, url: str, **kwargs) -> FetchedCompanyPage:
         return FetchedCompanyPage(
             url=url,
             content_type="text/html",
