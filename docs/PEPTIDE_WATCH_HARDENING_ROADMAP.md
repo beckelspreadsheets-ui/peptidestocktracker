@@ -556,17 +556,42 @@ adds discovery:
 - Config: added `sec_fulltext` and FDA Import Alert 66-66 (claimed by the existing fda
   family) sources.
 
-## Remaining coverage work (validate during the soak week)
+## Source endpoint audit — live-probed 2026-06-11
 
-- `wipo_patentscope_rss` currently points at the structured-search *page* (watched as a
-  page — low signal). Replace the URL with a real Patentscope RSS query feed once verified
-  in a browser; the watched_pages family already handles feed entries.
-- `uspto_assignment` is watched as a page; a bespoke assignment-API adapter needs a live
-  endpoint check (assignment-api.uspto.gov) before it's worth building.
-- `sedar_plus` page watch is shallow (the portal is JS-driven); per-company SEDAR+ filing
-  feeds need investigation.
-- Possible next sources, all drop-in now: company newswire RSS feeds (GlobeNewswire/PRN
-  per-company), FDA 503B bulks list, EU/WHO trial registries.
+Every candidate endpoint was probed live before building against it. Verified and shipped:
+
+- **EDGAR full-text search** (`efts.sec.gov/LATEST/search-index?q="<phrase>"`): works;
+  quoted phrases required (unquoted → 500); hit shape `ciks`/`display_names`/`file_type`/
+  `file_date`; transient 500s occur (covered by the retry layer). Real non-watchlist
+  BPC-157 filers confirmed.
+- **PubMed E-utilities**: works (219 BPC-157 publications at probe time).
+- **FDA 503B bulks list PDF** (`fda.gov/media/94164/download`): verified by extracting the
+  PDF title page; added as `fda_503b_pdf` (fda family claims it automatically).
+- **FDA Import Alert 66-66** (`accessdata.fda.gov/cms_ia/importalert_190.html`): 200, HTML.
+
+Probed and ruled out for now (page-watch fallback keeps them covered):
+
+- **WIPO Patentscope RSS**: no public RSS endpoint responds (`rss.jsf` variants 404;
+  `format=rss` returns the HTML page). Patentscope feeds appear to require UI-generated
+  sessions; the entry stays a page watch.
+- **USPTO assignment API**: `assignment-api.uspto.gov` no longer resolves in DNS; the
+  modern USPTO Open Data Portal (`api.uspto.gov`) requires a free API key. Next step: get a
+  key (env var `PEPTIDE_WATCH_USPTO_API_KEY`-style, never config) and build the adapter
+  against a key'd live check.
+- **SEDAR+ backend**: guessed service paths 404; portal is JS-driven. Page watch stays;
+  per-company filing coverage needs a session-level investigation.
+- **OTC Markets backend API** (`backend.otcmarkets.com/otcapi`): 403 for non-browser
+  clients; their HTML quote pages remain covered by `company_pages`.
+
+Also expanded for accuracy (config-only): broader Federal Register queries (503A/503B bulk
+drug substances + alias sweep), an explicit `pubmed` query group, and a second
+`sec_keywords` phrase set ("BPC 157" spacing variant, TB-500, pentadecapeptide, Epitalon,
+copper tripeptide-1) for the full-text discovery scanner.
+
+Candidates for the next round (need API keys or new adapters): USPTO Open Data Portal,
+EPO OPS, PatentsView (all key-gated patent APIs); openFDA enforcement/recall API;
+per-company newswire RSS feeds (verify exact feed URLs per company); EU CTR / WHO ICTRP
+trial registries; a real chat/webhook alert channel (token via env var).
 
 ---
 

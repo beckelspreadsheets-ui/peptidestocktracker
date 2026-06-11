@@ -17,6 +17,8 @@ queries:
   sec_keywords:
   - '"BPC-157" OR "RGN-259" OR "thymosin beta 4" OR "GHK-Cu" OR "MOTS-c" OR "CB4211"
     OR "LL-37"'
+  - '"BPC 157" OR "TB-500" OR "thymosin beta-4" OR "pentadecapeptide" OR "Epitalon"
+    OR "copper tripeptide-1"'
   hims_lifemd:
   - '"Hims" OR "Hims & Hers" peptide facility peptide compounding'
   - HIMS "peptides" "compounding"
@@ -36,3 +38,12 @@ queries:
   pcac_docket:
   - '"FDA-2025-N-6895" "BPC-157"'
   - '"Pharmacy Compounding Advisory Committee" "MOTs-C" "Semax" "Epitalon"'
+  - '"bulk drug substances" compounding 503A'
+  - '"bulk drug substances" compounding 503B'
+  - '"BPC-157" OR "thymosin beta-4" OR "GHK-Cu"'
+  pubmed:
+  - '"BPC-157" OR "BPC 157" OR "pentadecapeptide BPC"'
+  - '"TB-500" OR "thymosin beta-4 fragment"'
+  - '"GHK-Cu" OR "copper tripeptide-1"'
+  - '"thymosin beta-4" OR "RGN-259" OR timbetasin'
+  - '"MOTS-c" OR "CB4211"'

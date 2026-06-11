@@ -14,6 +14,11 @@ sources:
     url: https://www.fda.gov/media/94155/download
     tier: A
     cadence: weekly
+  fda_503b_pdf:
+    type: pdf
+    url: https://www.fda.gov/media/94164/download
+    tier: A
+    cadence: weekly
   fda_safety_risk:
     type: page
     url: https://www.fda.gov/drugs/compounding/safety-risks-associated-certain-bulk-drug-substances-nominated-use-compounding
