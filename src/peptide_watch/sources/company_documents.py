@@ -394,6 +394,11 @@ def _create_event_if_relevant(
 
 
 def _has_relevant_match(document: CompanyDocument) -> bool:
+    if document.source_type == "watched_feed_item":
+        # Feed items come from already-scoped feeds (e.g. patent search
+        # feeds), so generic catalyst keywords alone are noise; require a
+        # watch-term match.
+        return bool(document.peptide_ids)
     return bool(document.peptide_ids or document.keyword_matches)
 
 

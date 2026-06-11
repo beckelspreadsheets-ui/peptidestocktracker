@@ -84,6 +84,30 @@ def _scan_sec(db_path: Path, config_dir: Path, run_id: str) -> Any:
     return scan_sec_filings(db_path, config_dir=config_dir, run_id=run_id)
 
 
+@register_scanner("sec_fulltext")
+def _scan_sec_fulltext(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """EDGAR full-text search for watch terms across all filers (discovery)."""
+    from peptide_watch.sources.sec_fulltext import scan_sec_fulltext
+
+    return scan_sec_fulltext(db_path, config_dir=config_dir, run_id=run_id)
+
+
+@register_scanner("pubmed")
+def _scan_pubmed(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """PubMed publications matching configured terms via NCBI E-utilities."""
+    from peptide_watch.sources.pubmed import scan_pubmed
+
+    return scan_pubmed(db_path, config_dir=config_dir, run_id=run_id)
+
+
+@register_scanner("watched_pages")
+def _scan_watched_pages(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """Catch-all change watch for page/RSS sources no other family claims."""
+    from peptide_watch.sources.watched_pages import scan_watched_pages
+
+    return scan_watched_pages(db_path, config_dir=config_dir, run_id=run_id)
+
+
 DEFAULT_SCANNERS: dict[str, Scanner] = SCANNER_REGISTRY
 
 

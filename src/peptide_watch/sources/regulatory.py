@@ -536,6 +536,8 @@ def _create_event(
 
 
 def _new_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("pubmed"):
+        return "pubmed_publication"
     if document.source_id.startswith("federal_register"):
         return "federal_register_notice_detected"
     if "503a" in document.source_id.lower():
@@ -548,6 +550,8 @@ def _new_event_type(document: RegulatoryDocument) -> str:
 
 
 def _changed_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("pubmed"):
+        return "pubmed_publication"
     if document.source_id.startswith("federal_register"):
         return "federal_register_notice_changed"
     if "503a" in document.source_id.lower():

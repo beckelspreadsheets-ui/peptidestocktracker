@@ -19,6 +19,11 @@ sources:
     url: https://www.fda.gov/drugs/compounding/safety-risks-associated-certain-bulk-drug-substances-nominated-use-compounding
     tier: A
     cadence: weekly
+  fda_import_alert_66_66:
+    type: page
+    url: https://www.accessdata.fda.gov/cms_ia/importalert_190.html
+    tier: A
+    cadence: weekly
   federal_register:
     type: api
     url: https://www.federalregister.gov/api/v1/documents.json
@@ -27,6 +32,11 @@ sources:
   sec_edgar:
     type: api
     url: https://data.sec.gov/
+    tier: A
+    cadence: daily
+  sec_fulltext:
+    type: api
+    url: https://efts.sec.gov/LATEST/search-index
     tier: A
     cadence: daily
   pubmed:

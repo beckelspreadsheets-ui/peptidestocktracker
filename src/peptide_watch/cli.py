@@ -366,7 +366,11 @@ def backup_db(
 def config_check(
     config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
 ) -> None:
-    """Validate all config files and dry-run-instantiate every source client."""
+    """Validate config, dry-run-instantiate clients, and verify source coverage."""
+
+    from peptide_watch.coverage import UNCLAIMED, source_coverage
+    from peptide_watch.sources.pubmed import PubMedClient
+    from peptide_watch.sources.sec_fulltext import SecFullTextClient
 
     try:
         config = load_config(config_dir)
@@ -380,6 +384,8 @@ def config_check(
         "federal_register": FederalRegisterClient,
         "company_pages": CompanyPageClient,
         "sec_edgar": SecEdgarClient,
+        "sec_fulltext": SecFullTextClient,
+        "pubmed": PubMedClient,
     }
     failures: list[str] = []
     for name, client_class in clients.items():
@@ -392,12 +398,27 @@ def config_check(
             typer.echo(f"Client instantiation failed: {failure}", err=True)
         raise typer.Exit(code=1)
 
+    coverage = source_coverage(config)
+    by_family: dict[str, int] = {}
+    for family in coverage.values():
+        by_family[family] = by_family.get(family, 0) + 1
+    unclaimed = sorted(sid for sid, family in coverage.items() if family == UNCLAIMED)
     typer.echo(
         "Config OK: "
         f"{len(config.peptides)} peptides, {len(config.companies)} companies, "
         f"{len(config.sources)} sources, {len(config.queries)} query groups, "
         f"{len(clients)} source clients instantiated."
     )
+    typer.echo(
+        "Source coverage: "
+        + ", ".join(f"{family}={count}" for family, count in sorted(by_family.items()))
+    )
+    if unclaimed:
+        typer.echo(
+            f"Config check failed: no scanner claims these sources: {', '.join(unclaimed)}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
 
 @claims_app.command("add")

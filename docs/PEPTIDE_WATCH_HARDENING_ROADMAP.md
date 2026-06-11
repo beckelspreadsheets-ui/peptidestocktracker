@@ -532,15 +532,41 @@ the standing disclaimer sentence is allowlisted. Wired into CI after the test st
 - [x] PR6 — outbox alert pipeline, severity tiers, batching, digest
 - [x] PR7 — content-addressed snapshots, replay, verify, immutability
 - [x] PR8 — CI language gate
+- [x] PR9 — coverage expansion: watched_pages catch-all, pubmed, sec_fulltext discovery, enforced source coverage
 
-## Known coverage gaps (next after the soak week)
+**PR9 — coverage expansion (2026-06-11).** Closes the unclaimed-source gap structurally and
+adds discovery:
 
-`config/sources.yaml` declares four sources **no scanner family implements**: `pubmed`,
-`wipo_patentscope_rss`, `uspto_assignment`, and `sedar_plus` (`company_pages` explicitly
-excludes the last three; `pubmed` matches nothing). They silently contribute zero events
-today. With the registry + shared HTTP client they are now drop-in scanner functions;
-patent assignments and SEDAR+ filings are the two most likely to surface catalysts the
-current families miss.
+- **`watched_pages` family (catch-all):** claims every `page`/`rss` source no other family
+  claims (`sedar_plus`, `uspto_assignment`, `wipo_patentscope_rss`, anything added later).
+  Pages get content-hash change detection; feeds get one document per entry via feedparser
+  (feed items require a watch-term match to alert — generic catalyst keywords alone are
+  noise on pre-scoped feeds). Conditional GETs and per-source isolation included.
+- **Coverage is enforced:** `coverage.py` maps every configured source to its claiming
+  family; `config check` prints the map and **fails** on any UNCLAIMED source, so the
+  silent-zero-coverage bug class cannot return.
+- **`pubmed` family:** NCBI E-utilities (esearch + esummary, JSON), querying primary-target
+  aliases (overridable via a `pubmed` group in `queries.yaml`); stores documents under
+  `pubmed:<pmid>` and emits `pubmed_publication` events (medium tier). Live-validated.
+- **`sec_fulltext` family (discovery engine):** EDGAR full-text search (`efts.sec.gov`)
+  across **all** filers for the `sec_keywords` phrases — surfaces companies not on the
+  watchlist (stored with `metadata.discovery = true`; watchlist hits are matched by
+  name/ticker). Live-validated: the endpoint requires quoted phrases, returns `ciks` +
+  `display_names`, and real BPC-157 hits exist from non-watchlist filers today.
+- Config: added `sec_fulltext` and FDA Import Alert 66-66 (claimed by the existing fda
+  family) sources.
+
+## Remaining coverage work (validate during the soak week)
+
+- `wipo_patentscope_rss` currently points at the structured-search *page* (watched as a
+  page — low signal). Replace the URL with a real Patentscope RSS query feed once verified
+  in a browser; the watched_pages family already handles feed entries.
+- `uspto_assignment` is watched as a page; a bespoke assignment-API adapter needs a live
+  endpoint check (assignment-api.uspto.gov) before it's worth building.
+- `sedar_plus` page watch is shallow (the portal is JS-driven); per-company SEDAR+ filing
+  feeds need investigation.
+- Possible next sources, all drop-in now: company newswire RSS feeds (GlobeNewswire/PRN
+  per-company), FDA 503B bulks list, EU/WHO trial registries.
 
 ---
 
