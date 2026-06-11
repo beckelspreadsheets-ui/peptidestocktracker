@@ -106,14 +106,42 @@ def _record_id(record: dict[str, Any]) -> str:
 
 
 def _record_title(record: dict[str, Any]) -> str:
+    meta = record.get("applicationMetaData")
+    if isinstance(meta, dict) and meta.get("inventionTitle"):
+        return str(meta["inventionTitle"])
     for key in ("inventionTitle", "title", "inventionSubjectMatterCategory"):
         value = record.get(key)
         if value:
             return str(value)
-    meta = record.get("applicationMetaData")
-    if isinstance(meta, dict) and meta.get("inventionTitle"):
-        return str(meta["inventionTitle"])
     return ""
+
+
+def _assignee_names(record: dict[str, Any]) -> list[str]:
+    """All assignee (owner) names across the record's assignment history."""
+
+    names: list[str] = []
+    for assignment in record.get("assignmentBag") or []:
+        if not isinstance(assignment, dict):
+            continue
+        for assignee in assignment.get("assigneeBag") or []:
+            if isinstance(assignee, dict) and assignee.get("assigneeNameText"):
+                name = str(assignee["assigneeNameText"]).strip()
+                if name and name not in names:
+                    names.append(name)
+    return names
+
+
+def _match_assignee_to_watchlist(assignees: list[str], config: WatchConfig):
+    """Return (company, assignee_name) when an assignee is a watchlist company."""
+
+    for name in assignees:
+        lowered = name.casefold()
+        for company in config.companies:
+            company_name = company.name.casefold()
+            # Require a meaningful overlap, not a stray short token.
+            if len(company_name) >= 5 and (company_name in lowered or lowered in company_name):
+                return company, name
+    return None, None
 
 
 def default_uspto_queries(config: WatchConfig) -> list[str]:
@@ -201,19 +229,56 @@ def normalize_patent_record(
     record_id: str, record: dict[str, Any], query: str, config: WatchConfig
 ):
     raw = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    meta = record.get("applicationMetaData") or {}
     title = _record_title(record)
-    # The whole record is the matchable text: alias matching keeps working
-    # even where the API's field names differ from the guesses above.
-    text = f"{title}. {raw}"
+    inventor = str(meta.get("firstInventorName") or "")
+    filing_date = str(meta.get("filingDate") or "")
+    cpc = [str(code) for code in (meta.get("cpcClassificationBag") or [])]
+    assignees = _assignee_names(record)
+    matched_company, matched_assignee = _match_assignee_to_watchlist(assignees, config)
+    # The USPTO search matches server-side (claims/spec), so the returned
+    # metadata may not contain the term. Fold the searched phrase into the
+    # text so peptide tagging works, like the SEC full-text scanner.
+    query_phrase = query.strip().strip('"')
+
+    text = ". ".join(
+        part
+        for part in [
+            title,
+            f"Inventor {inventor}" if inventor else "",
+            f"Assignee {'; '.join(assignees)}" if assignees else "",
+            " ".join(cpc),
+            f"USPTO patent match for {query_phrase}",
+            f"Filed {filing_date}" if filing_date else "",
+        ]
+        if part
+    )
+
+    metadata: dict[str, Any] = {
+        "query": query,
+        "application_number": record_id,
+        "assignees": assignees,
+        "inventor": inventor,
+        "filing_date": filing_date,
+        "cpc": cpc,
+    }
+    if matched_company is not None:
+        metadata["assigned_company_id"] = matched_company.id
+        metadata["assigned_company_name"] = matched_company.name
+        metadata["assigned_company_ticker"] = matched_company.ticker
+        metadata["assigned_company_public"] = matched_company.public_private.startswith("public")
+        metadata["matched_assignee"] = matched_assignee
+
     return build_regulatory_document(
         document_key=f"uspto:{record_id}",
         source_id=USPTO_SOURCE_ID,
         source_type="uspto_patent",
         url=f"https://patentcenter.uspto.gov/applications/{record_id}",
         title=title or f"USPTO application {record_id}",
+        publication_date=filing_date or None,
         content_text=text,
         config=config,
-        metadata={"query": query},
+        metadata=metadata,
         raw_content=raw.encode("utf-8"),
         parser_version=PARSER_VERSION,
     )

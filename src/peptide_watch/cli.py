@@ -360,10 +360,16 @@ def uspto_check(
     typer.echo(f"Top-level keys: {', '.join(payload.keys())}")
     typer.echo(f"Records extracted: {len(records)}")
     if records:
-        typer.echo(f"First record keys: {', '.join(list(records[0].keys())[:20])}")
-        typer.echo(json_module.dumps(records[0], indent=1)[:1500])
+        record = records[0]
+        typer.echo(f"First record keys: {', '.join(list(record.keys())[:20])}")
+        # The two stock-relevant nested bags, shown in full; the noisy
+        # eventDataBag/correspondence fields are omitted from the preview.
+        for key in ("applicationMetaData", "assignmentBag", "recordAttorney"):
+            if key in record:
+                typer.echo(f"\n--- {key} ---")
+                typer.echo(json_module.dumps(record[key], indent=1)[:1800])
     typer.echo(
-        "USPTO key works. The uspto_patents family now joins every scan run "
+        "\nUSPTO key works. The uspto_patents family now joins every scan run "
         "while the key is set (confirm with: peptide-watch list-adapters)."
     )
 

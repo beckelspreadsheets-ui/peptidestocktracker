@@ -535,11 +535,19 @@ def _create_event(
     )
 
 
+def _uspto_event_type(document: RegulatoryDocument) -> str:
+    if document.metadata.get("assigned_company_public"):
+        return "patent_assignment_to_public_company"
+    if document.metadata.get("assigned_company_id"):
+        return "patent_assignment_to_watchlist_company"
+    return "patent_publication"
+
+
 def _new_event_type(document: RegulatoryDocument) -> str:
     if document.source_id.startswith("nih_reporter"):
         return "grant_award"
     if document.source_id.startswith("uspto"):
-        return "patent_publication"
+        return _uspto_event_type(document)
     if document.source_id.startswith("openfda"):
         return "fda_enforcement_report"
     if document.source_id.startswith("pubmed"):
@@ -559,7 +567,7 @@ def _changed_event_type(document: RegulatoryDocument) -> str:
     if document.source_id.startswith("nih_reporter"):
         return "grant_award"
     if document.source_id.startswith("uspto"):
-        return "patent_publication"
+        return _uspto_event_type(document)
     if document.source_id.startswith("openfda"):
         return "fda_enforcement_report"
     if document.source_id.startswith("pubmed"):
@@ -577,7 +585,13 @@ def _changed_event_type(document: RegulatoryDocument) -> str:
 
 def _severity_for_document(document: RegulatoryDocument, *, changed: bool) -> str:
     source_id = document.source_id.lower()
-    if source_id.startswith(("openfda", "uspto")) and document.peptide_ids:
+    if source_id.startswith("uspto"):
+        if document.metadata.get("assigned_company_public"):
+            return "critical"  # peptide patent assigned to a public watchlist company
+        if document.metadata.get("assigned_company_id"):
+            return "high"  # assigned to a private watchlist company
+        return "medium"  # peptide patent with no watchlist owner: context
+    if source_id.startswith("openfda") and document.peptide_ids:
         return "high"
     if source_id.startswith("nih_reporter"):
         if document.metadata.get("small_business_award"):

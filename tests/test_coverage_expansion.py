@@ -273,35 +273,73 @@ def test_webhook_channel_requires_env_url(monkeypatch) -> None:
         WebhookChannel()
 
 
+def _uspto_record(app_number: str, *, assignee: str | None = None) -> dict:
+    record: dict = {
+        "applicationNumberText": app_number,
+        "applicationMetaData": {
+            "inventionTitle": "Stabilized transdermal composition",
+            "firstInventorName": "Jane Doe",
+            "filingDate": "2026-01-15",
+            "cpcClassificationBag": ["A61K 38/10"],
+        },
+    }
+    if assignee is not None:
+        record["assignmentBag"] = [{"assigneeBag": [{"assigneeNameText": assignee}]}]
+    return record
+
+
 class FakeUsptoClient:
     api_key = "test-key"
 
+    def __init__(self, record: dict | None = None):
+        self.record = record or _uspto_record("18123456")
+
     def search(self, query: str, *, limit: int = 25):
-        return [
-            {
-                "applicationNumberText": "18123456",
-                "inventionTitle": "Stabilized BPC-157 transdermal composition",
-                "applicantName": "Example Therapeutics Inc.",
-            }
-        ]
+        return [self.record]
 
 
-def test_uspto_scan_stores_patent_and_emits_high_severity_event(tmp_path) -> None:
+def test_uspto_peptide_only_patent_is_medium_tier(tmp_path) -> None:
     from peptide_watch.sources.uspto import scan_uspto_patents
 
     db_path = init_db(tmp_path / "watch.db")
     result = scan_uspto_patents(
-        db_path, config_dir=CONFIG_DIR, client=FakeUsptoClient(), queries=['"BPC-157"']
+        db_path,
+        config_dir=CONFIG_DIR,
+        client=FakeUsptoClient(_uspto_record("18123456", assignee="Red Mountain Holdings, LLC")),
+        queries=['"BPC-157"'],
     )
 
     assert result.stored == 1 and result.inserted == 1
     with sqlite3.connect(db_path) as connection:
         document = connection.execute(
-            "SELECT document_key, source_type FROM regulatory_documents"
+            "SELECT document_key, source_type, peptide_ids_json FROM regulatory_documents"
         ).fetchone()
         event = connection.execute("SELECT event_type, severity FROM events").fetchone()
-    assert document == ("uspto:18123456", "uspto_patent")
-    assert event == ("patent_publication", "high")
+    assert document[0] == "uspto:18123456" and document[1] == "uspto_patent"
+    assert "bpc_157" in document[2]  # query phrase folded into text -> tagged
+    assert event == ("patent_publication", "medium")  # no watchlist owner
+
+
+def test_uspto_assignment_to_public_company_is_critical(tmp_path) -> None:
+    from peptide_watch.sources.uspto import scan_uspto_patents
+
+    db_path = init_db(tmp_path / "watch.db")
+    # "Hims & Hers Health" is a public watchlist company.
+    result = scan_uspto_patents(
+        db_path,
+        config_dir=CONFIG_DIR,
+        client=FakeUsptoClient(_uspto_record("18999999", assignee="Hims & Hers Health, Inc.")),
+        queries=['"BPC-157"'],
+    )
+
+    assert result.stored == 1
+    with sqlite3.connect(db_path) as connection:
+        event = connection.execute("SELECT event_type, severity FROM events").fetchone()
+        metadata = connection.execute(
+            "SELECT metadata_json FROM regulatory_documents"
+        ).fetchone()[0]
+    assert event == ("patent_assignment_to_public_company", "critical")
+    assert '"assigned_company_id":"hims"' in metadata.replace(" ", "")
 
 
 def test_uspto_record_extraction_handles_unknown_envelopes() -> None:
