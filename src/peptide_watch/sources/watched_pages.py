@@ -134,16 +134,23 @@ def scan_watched_pages(
 
 
 def _normalize_watched_source(source_id, source, fetched_page, config):
-    """One document per feed entry when the source parses as a feed,
-    otherwise a single page document with content-hash change detection."""
+    """One document per feed entry for feeds; a single page document for pages.
 
-    if source.type == "rss" or "xml" in fetched_page.content_type.lower():
+    A source declared ``type: rss`` is always parsed as a feed — an empty feed
+    yields nothing (not an HTML page). Auto-detected XML on a ``type: page``
+    source is also treated as a feed when it has entries.
+    """
+
+    is_feed = source.type == "rss" or "xml" in fetched_page.content_type.lower()
+    if is_feed:
         parsed = feedparser.parse(fetched_page.body)
         if parsed.entries:
             return [
                 _feed_entry_document(source_id, source, entry, config)
                 for entry in parsed.entries
             ]
+        if source.type == "rss":
+            return []  # explicitly a feed; an empty feed has nothing to store
     return [_page_document(source_id, source, fetched_page, config)]
 
 

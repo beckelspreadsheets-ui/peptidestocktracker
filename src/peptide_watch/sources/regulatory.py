@@ -536,6 +536,8 @@ def _create_event(
 
 
 def _new_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("nih_reporter"):
+        return "grant_award"
     if document.source_id.startswith("uspto"):
         return "patent_publication"
     if document.source_id.startswith("openfda"):
@@ -554,6 +556,8 @@ def _new_event_type(document: RegulatoryDocument) -> str:
 
 
 def _changed_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("nih_reporter"):
+        return "grant_award"
     if document.source_id.startswith("uspto"):
         return "patent_publication"
     if document.source_id.startswith("openfda"):
@@ -575,6 +579,10 @@ def _severity_for_document(document: RegulatoryDocument, *, changed: bool) -> st
     source_id = document.source_id.lower()
     if source_id.startswith(("openfda", "uspto")) and document.peptide_ids:
         return "high"
+    if source_id.startswith("nih_reporter"):
+        if document.metadata.get("small_business_award"):
+            return "high"  # SBIR/STTR award to a small company
+        return "medium"
     if changed and ("503a" in source_id or "pcac" in source_id):
         return "critical"
     if document.source_id.startswith("federal_register") or "pcac" in source_id or "503a" in source_id:

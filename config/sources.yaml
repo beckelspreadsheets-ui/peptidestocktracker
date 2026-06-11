@@ -49,6 +49,26 @@ sources:
     url: https://api.fda.gov/drug/enforcement.json
     tier: A
     cadence: daily
+  nih_reporter:
+    type: api
+    url: https://api.reporter.nih.gov/v2/projects/search
+    tier: A
+    cadence: weekly
+  gnw_bpc157:
+    type: rss
+    url: https://www.globenewswire.com/RssFeed/keyword/BPC-157
+    tier: B
+    cadence: daily
+  gnw_tb500:
+    type: rss
+    url: https://www.globenewswire.com/RssFeed/keyword/TB-500
+    tier: B
+    cadence: daily
+  gnw_ghk_cu:
+    type: rss
+    url: https://www.globenewswire.com/RssFeed/keyword/GHK-Cu
+    tier: B
+    cadence: daily
   pubmed:
     type: api
     url: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/

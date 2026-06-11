@@ -321,3 +321,50 @@ def test_uspto_scan_without_key_raises_actionable_error(tmp_path, monkeypatch) -
 
     with pytest.raises(RuntimeError, match="PEPTIDE_WATCH_USPTO_API_KEY"):
         scan_uspto_patents(db_path, config_dir=CONFIG_DIR, queries=['"BPC-157"'])
+
+
+class FakeNihReporterClient:
+    def search(self, text: str, *, limit: int = 25):
+        if "thymosin" not in text.lower():
+            return []
+        return [
+            {
+                "project_num": "1R43AG099999-01",
+                "appl_id": 12345,
+                "project_title": "Thymosin beta-4 wound healing peptide therapeutic",
+                "organization": {"org_name": "Tiny Biotech Inc."},
+                "activity_code": "R43",
+                "award_notice_date": "2026-05-01T00:00:00",
+                "abstract_text": "Develop a thymosin beta-4 based product.",
+            }
+        ]
+
+
+def test_nih_reporter_scan_flags_sbir_award_as_high(tmp_path) -> None:
+    from peptide_watch.sources.nih_reporter import scan_nih_reporter
+
+    db_path = init_db(tmp_path / "watch.db")
+    result = scan_nih_reporter(
+        db_path,
+        config_dir=CONFIG_DIR,
+        client=FakeNihReporterClient(),
+        queries=["thymosin beta-4"],
+    )
+
+    assert result.stored == 1 and result.inserted == 1
+    with sqlite3.connect(db_path) as connection:
+        document = connection.execute(
+            "SELECT document_key, source_type, peptide_ids_json FROM regulatory_documents"
+        ).fetchone()
+        event = connection.execute("SELECT event_type, severity FROM events").fetchone()
+    assert document[0] == "nih_reporter:1R43AG099999-01"
+    assert document[1] == "nih_grant"
+    assert "thymosin_beta_4" in document[2]
+    assert event == ("grant_award", "high")  # R43 = SBIR small-business award
+
+
+def test_globenewswire_feeds_route_to_watched_pages() -> None:
+    config = load_config(CONFIG_DIR)
+    coverage = source_coverage(config)
+    assert coverage["gnw_bpc157"] == "watched_pages"
+    assert coverage["gnw_tb500"] == "watched_pages"

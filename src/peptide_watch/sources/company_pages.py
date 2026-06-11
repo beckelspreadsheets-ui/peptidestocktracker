@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from pydantic import BaseModel
 
 from peptide_watch.config import CompanyConfig, SourceConfig, WatchConfig, load_config
@@ -249,9 +250,13 @@ def _company_by_id(config: WatchConfig, company_id: str | None) -> CompanyConfig
 
 def _extract_text_and_title(fetched: FetchedCompanyPage) -> tuple[str, str | None]:
     text = fetched.body.decode("utf-8", errors="ignore")
-    soup = BeautifulSoup(text, "html.parser")
-    title = soup.title.get_text(" ", strip=True) if soup.title else None
-    return soup.get_text(" ", strip=True), title
+    with warnings.catch_warnings():
+        # We knowingly run the HTML extractor over occasional XML (a feed that
+        # slipped through as a page); the extracted text is unaffected.
+        warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+        soup = BeautifulSoup(text, "html.parser")
+        title = soup.title.get_text(" ", strip=True) if soup.title else None
+        return soup.get_text(" ", strip=True), title
 
 
 def _title_from_source_id(source_id: str) -> str:

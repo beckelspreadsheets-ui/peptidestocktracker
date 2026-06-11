@@ -19,6 +19,7 @@ API_FAMILIES = {
     "pubmed": "pubmed",
     "sec_fulltext": "sec_fulltext",
     "openfda_enforcement": "openfda_enforcement",
+    "nih_reporter": "nih_reporter",
 }
 
 

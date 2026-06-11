@@ -203,6 +203,31 @@ class HttpClient:
         result = self.get(url, accept=accept)
         return result.body.decode("utf-8", errors="ignore")
 
+    def post_json(self, url: str, *, json_body: Any) -> Any:
+        """POST a JSON body and parse the JSON response, with retry/backoff.
+
+        Used by JSON-RPC-style search APIs (e.g. NIH RePORTER). The urllib
+        fallback transport is not consulted here — POST search endpoints seen
+        so far do not fingerprint-block.
+        """
+
+        attempt = 0
+        while True:
+            attempt += 1
+            self._throttle(url)
+            try:
+                response = self._client.post(url, json=json_body)
+            except httpx.TransportError:
+                if attempt >= self._max_attempts:
+                    raise
+                time.sleep(self._backoff(attempt, None))
+                continue
+            if response.status_code in RETRYABLE_STATUS_CODES and attempt < self._max_attempts:
+                time.sleep(self._backoff(attempt, _retry_after_seconds(response)))
+                continue
+            response.raise_for_status()
+            return json.loads(response.content.decode("utf-8"))
+
     def close(self) -> None:
         self._client.close()
 

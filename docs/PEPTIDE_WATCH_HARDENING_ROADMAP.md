@@ -624,9 +624,25 @@ registers itself **only when the key env var is set**, so keyless installs stay 
 `peptide-watch uspto-check` once after exporting the key to verify it live and print the
 real response shape (tighten `_extract_records`/`_record_id` afterward if needed).
 
-Candidates for the next round: EPO OPS, PatentsView (key-gated patent APIs);
-per-company newswire RSS feeds (verify exact feed URLs per company); EU CTR / WHO ICTRP
-trial registries.
+**PR13 — NIH RePORTER + newswire feeds (2026-06-11).** Two live-validated additions:
+
+- **`nih_reporter` family** (public POST API): federal research-grant awards mentioning
+  watch terms — the *earliest* public signal of peptide research, often years ahead of a
+  trial or filing, and SBIR/STTR awards (activity codes R41–R44) go to small companies, so
+  it doubles as stock discovery. Live: 28 real grant projects returned. Queries use
+  descriptive multi-word names with RePORTER's AND operator — short hyphenated codes
+  tokenize too loosely ("BPC-157" → 1666 noisy hits; "thymosin beta-4" → 194 precise),
+  verified live. Events are `grant_award`, high tier for small-business awards else medium.
+  Added `HttpClient.post_json` (retry/backoff) for this and future POST APIs.
+- **GlobeNewswire keyword RSS feeds** (`gnw_bpc157`, `gnw_tb500`, `gnw_ghk_cu`):
+  config-only, routed through `watched_pages` (one document per release, peptide-term match
+  required to alert). Catches company press releases the moment they cross the wire. Live:
+  feeds parse, items dedupe correctly on rescan. `watched_pages` now treats an explicit
+  `type: rss` source as always-a-feed (empty feed → nothing, no HTML fallback).
+
+Candidates for the next round: EPO OPS, PatentsView (key-gated patent APIs); EU CTR /
+WHO ICTRP trial registries; additional per-company newswire feeds (PRNewswire/Business
+Wire — verify each company's exact feed URL).
 
 ---
 
