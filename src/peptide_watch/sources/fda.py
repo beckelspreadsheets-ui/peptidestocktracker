@@ -13,15 +13,19 @@ from pydantic import BaseModel
 from pypdf import PdfReader
 
 from peptide_watch.config import SourceConfig, WatchConfig, load_config
+from peptide_watch.database import init_db
+from peptide_watch.events import ad_hoc_run_id
 from peptide_watch.sources.regulatory import (
     RegulatoryDocument,
     RegulatoryScanResult,
     build_regulatory_document,
     export_regulatory_documents_markdown,
-    hash_bytes,
     list_regulatory_documents,
-    store_regulatory_document,
+    open_connection,
+    write_regulatory_document,
 )
+
+PARSER_VERSION = 1
 
 
 class FetchedFdaContent(BaseModel):
@@ -65,23 +69,49 @@ def scan_fda_sources(
     config_dir: str | Path = "config",
     client: FdaClient | None = None,
     source_ids: list[str] | None = None,
+    run_id: str | None = None,
 ) -> RegulatoryScanResult:
-    """Scan configured FDA sources and store changed documents."""
+    """Scan configured FDA sources and store changed documents.
+
+    Each source fails independently; a source's writes are one transaction.
+    """
 
     config = load_config(config_dir)
     selected = _selected_fda_sources(config, source_ids)
     api_client = client or FdaClient()
+    run_id = run_id or ad_hoc_run_id()
 
+    init_db(db_path)
+    connection = open_connection(db_path)
     fetched = stored = inserted = changed = events_created = 0
-    for source_id, source in selected.items():
-        fetched_content = api_client.fetch(source.url)
-        document = normalize_fda_document(source_id, source, fetched_content, config)
-        result = store_regulatory_document(db_path, document)
-        fetched += 1
-        stored += 1
-        inserted += int(result.inserted)
-        changed += int(result.changed)
-        events_created += result.events_created
+    errors: list[str] = []
+    try:
+        for source_id, source in selected.items():
+            try:
+                fetched_content = api_client.fetch(source.url)
+                fetched += 1
+                document = normalize_fda_document(source_id, source, fetched_content, config)
+                result = write_regulatory_document(connection, document, run_id=run_id)
+                connection.commit()
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:
+                connection.rollback()
+                errors.append(f"{source_id}: {exc}")
+                continue
+            stored += 1
+            inserted += int(result.inserted)
+            changed += int(result.changed)
+            events_created += result.events_created
+    except BaseException:
+        connection.rollback()
+        connection.close()
+        raise
+    else:
+        connection.close()
+
+    if errors and stored == 0 and selected:
+        raise RuntimeError(f"FDA scan failed for all sources: {'; '.join(errors[:5])}")
 
     return RegulatoryScanResult(
         fetched=fetched,
@@ -90,6 +120,7 @@ def scan_fda_sources(
         changed=changed,
         events_created=events_created,
         source_ids=list(selected),
+        errors=errors,
     )
 
 
@@ -117,7 +148,8 @@ def normalize_fda_document(
             "source_tier": source.tier,
             "cadence": source.cadence,
         },
-        content_hash=hash_bytes(fetched.body),
+        raw_content=fetched.body,
+        parser_version=PARSER_VERSION,
     )
 
 

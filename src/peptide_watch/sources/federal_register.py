@@ -11,15 +11,19 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from peptide_watch.config import WatchConfig, load_config
+from peptide_watch.database import init_db
+from peptide_watch.events import ad_hoc_run_id
 from peptide_watch.sources.regulatory import (
     RegulatoryDocument,
     RegulatoryScanResult,
     build_regulatory_document,
     export_regulatory_documents_markdown,
-    hash_bytes,
     list_regulatory_documents,
-    store_regulatory_document,
+    open_connection,
+    write_regulatory_document,
 )
+
+PARSER_VERSION = 1
 
 FEDERAL_REGISTER_BASE_URL = "https://www.federalregister.gov/api/v1"
 FEDERAL_REGISTER_SOURCE_ID = "federal_register"
@@ -86,35 +90,70 @@ def scan_federal_register(
     client: FederalRegisterClient | None = None,
     queries: list[str] | None = None,
     per_page: int = 20,
+    run_id: str | None = None,
 ) -> RegulatoryScanResult:
-    """Search FDA Federal Register notices and store matching documents."""
+    """Search FDA Federal Register notices and store matching documents.
+
+    Each query and each document fails independently; a document's writes are
+    one transaction.
+    """
 
     config = load_config(config_dir)
     api_client = client or FederalRegisterClient()
     selected_queries = queries or _default_queries(config)
+    run_id = run_id or ad_hoc_run_id()
 
+    init_db(db_path)
+    connection = open_connection(db_path)
     fetched = stored = inserted = changed = events_created = 0
+    errors: list[str] = []
     seen_document_numbers: set[str] = set()
-    for query in selected_queries:
-        results = api_client.search_documents(query, per_page=per_page)
-        fetched += len(results)
-        for result in results:
-            document_number = str(result.get("document_number") or "").strip()
-            if not document_number or document_number in seen_document_numbers:
+    try:
+        for query in selected_queries:
+            try:
+                results = api_client.search_documents(query, per_page=per_page)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:
+                errors.append(f"query {query!r}: {exc}")
                 continue
-            seen_document_numbers.add(document_number)
-            detail = api_client.get_document(document_number)
-            if result.get("excerpts") and not detail.get("excerpts"):
-                detail["excerpts"] = result["excerpts"]
-            raw_text_url = detail.get("raw_text_url")
-            if raw_text_url:
-                detail["_raw_text"] = api_client.get_text(str(raw_text_url))
-            document = normalize_federal_register_document(detail, query, config)
-            store_result = store_regulatory_document(db_path, document)
-            stored += 1
-            inserted += int(store_result.inserted)
-            changed += int(store_result.changed)
-            events_created += store_result.events_created
+            fetched += len(results)
+            for result in results:
+                document_number = str(result.get("document_number") or "").strip()
+                if not document_number or document_number in seen_document_numbers:
+                    continue
+                seen_document_numbers.add(document_number)
+                try:
+                    detail = api_client.get_document(document_number)
+                    if result.get("excerpts") and not detail.get("excerpts"):
+                        detail["excerpts"] = result["excerpts"]
+                    raw_text_url = detail.get("raw_text_url")
+                    if raw_text_url:
+                        detail["_raw_text"] = api_client.get_text(str(raw_text_url))
+                    document = normalize_federal_register_document(detail, query, config)
+                    store_result = write_regulatory_document(connection, document, run_id=run_id)
+                    connection.commit()
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception as exc:
+                    connection.rollback()
+                    errors.append(f"{document_number}: {exc}")
+                    continue
+                stored += 1
+                inserted += int(store_result.inserted)
+                changed += int(store_result.changed)
+                events_created += store_result.events_created
+    except BaseException:
+        connection.rollback()
+        connection.close()
+        raise
+    else:
+        connection.close()
+
+    if errors and stored == 0 and fetched == 0 and selected_queries:
+        raise RuntimeError(
+            f"Federal Register scan failed for all queries: {'; '.join(errors[:5])}"
+        )
 
     return RegulatoryScanResult(
         fetched=fetched,
@@ -124,6 +163,7 @@ def scan_federal_register(
         events_created=events_created,
         source_ids=[FEDERAL_REGISTER_SOURCE_ID],
         queries=selected_queries,
+        errors=errors,
     )
 
 
@@ -149,7 +189,8 @@ def normalize_federal_register_document(
         content_text=text,
         config=config,
         metadata={"query": query, "raw": document},
-        content_hash=hash_bytes(raw.encode("utf-8")),
+        raw_content=raw.encode("utf-8"),
+        parser_version=PARSER_VERSION,
     )
 
 

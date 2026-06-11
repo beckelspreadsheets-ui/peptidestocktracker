@@ -16,15 +16,19 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict
 
 from peptide_watch.config import CompanyConfig, WatchConfig, load_config
+from peptide_watch.database import init_db
+from peptide_watch.events import ad_hoc_run_id
 from peptide_watch.sources.company_documents import (
     CompanyDocument,
     CompanyMonitorScanResult,
     build_company_document,
     export_company_documents_markdown,
-    hash_bytes,
     list_company_documents,
-    store_company_document,
+    open_connection,
+    write_company_document,
 )
+
+PARSER_VERSION = 1
 
 SEC_DATA_BASE_URL = "https://data.sec.gov"
 SEC_ARCHIVES_BASE_URL = "https://www.sec.gov/Archives/edgar/data"
@@ -126,8 +130,12 @@ def scan_sec_filings(
     tickers: list[str] | None = None,
     forms: list[str] | None = None,
     max_filings: int = 3,
+    run_id: str | None = None,
 ) -> CompanyMonitorScanResult:
-    """Scan recent SEC filings for configured public U.S. companies."""
+    """Scan recent SEC filings for configured public U.S. companies.
+
+    Each company fails independently; a filing's writes are one transaction.
+    """
 
     if max_filings < 1:
         raise ValueError("max_filings must be at least 1")
@@ -137,34 +145,55 @@ def scan_sec_filings(
     ticker_map = _ticker_map(sec_client.get_company_tickers())
     selected = _selected_sec_companies(config, company_ids=company_ids, tickers=tickers)
     selected_forms = tuple(forms or DEFAULT_SEC_FORMS)
+    run_id = run_id or ad_hoc_run_id()
 
+    init_db(db_path)
+    connection = open_connection(db_path)
     fetched = stored = inserted = changed = events_created = 0
+    errors: list[str] = []
     scanned_company_ids: list[str] = []
-    for company in selected:
-        cik = _resolve_company_cik(company, ticker_map)
-        if cik is None:
-            continue
-        scanned_company_ids.append(company.id)
-        submissions = sec_client.get_submissions(cik)
-        filing_refs = _recent_filing_refs(
-            submissions,
-            cik=cik,
-            forms=selected_forms,
-            max_filings=max_filings,
-        )
-        for filing_ref in filing_refs:
-            fetched_filing = sec_client.get_filing_text(
-                filing_ref.cik,
-                filing_ref.accession_number,
-                filing_ref.primary_document,
-            )
-            document = normalize_sec_filing(company, filing_ref, fetched_filing, config)
-            result = store_company_document(db_path, document)
-            fetched += 1
-            stored += 1
-            inserted += int(result.inserted)
-            changed += int(result.changed)
-            events_created += result.events_created
+    try:
+        for company in selected:
+            cik = _resolve_company_cik(company, ticker_map)
+            if cik is None:
+                continue
+            scanned_company_ids.append(company.id)
+            try:
+                submissions = sec_client.get_submissions(cik)
+                filing_refs = _recent_filing_refs(
+                    submissions,
+                    cik=cik,
+                    forms=selected_forms,
+                    max_filings=max_filings,
+                )
+                for filing_ref in filing_refs:
+                    fetched_filing = sec_client.get_filing_text(
+                        filing_ref.cik,
+                        filing_ref.accession_number,
+                        filing_ref.primary_document,
+                    )
+                    fetched += 1
+                    document = normalize_sec_filing(company, filing_ref, fetched_filing, config)
+                    result = write_company_document(connection, document, run_id=run_id)
+                    connection.commit()
+                    stored += 1
+                    inserted += int(result.inserted)
+                    changed += int(result.changed)
+                    events_created += result.events_created
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:
+                connection.rollback()
+                errors.append(f"{company.id}: {exc}")
+    except BaseException:
+        connection.rollback()
+        connection.close()
+        raise
+    else:
+        connection.close()
+
+    if errors and stored == 0 and scanned_company_ids:
+        raise RuntimeError(f"SEC scan failed for all companies: {'; '.join(errors[:5])}")
 
     return CompanyMonitorScanResult(
         fetched=fetched,
@@ -174,6 +203,7 @@ def scan_sec_filings(
         events_created=events_created,
         source_ids=[SEC_SOURCE_ID],
         company_ids=sorted(scanned_company_ids),
+        errors=errors,
     )
 
 
@@ -215,7 +245,8 @@ def normalize_sec_filing(
             "relationship": company.relationship,
             "liquidity_risk": company.liquidity_risk,
         },
-        content_hash=hash_bytes(fetched.body),
+        raw_content=fetched.body,
+        parser_version=PARSER_VERSION,
     )
 
 

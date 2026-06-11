@@ -19,41 +19,41 @@ CIRCUIT_BREAKER_THRESHOLD = 3
 MAX_COOLDOWN_RUNS = 16
 LOCKFILE_NAME = "peptide_watch.lock"
 
-Scanner = Callable[[Path, Path], Any]
+Scanner = Callable[[Path, Path, str], Any]
 
 
 class ScanLocked(RuntimeError):
     """Another scan already holds the lockfile."""
 
 
-def _scan_clinicaltrials(db_path: Path, config_dir: Path) -> Any:
+def _scan_clinicaltrials(db_path: Path, config_dir: Path, run_id: str) -> Any:
     from peptide_watch.sources.clinicaltrials import scan_clinicaltrials
 
-    return scan_clinicaltrials(db_path, config_dir=config_dir)
+    return scan_clinicaltrials(db_path, config_dir=config_dir, run_id=run_id)
 
 
-def _scan_fda(db_path: Path, config_dir: Path) -> Any:
+def _scan_fda(db_path: Path, config_dir: Path, run_id: str) -> Any:
     from peptide_watch.sources.fda import scan_fda_sources
 
-    return scan_fda_sources(db_path, config_dir=config_dir)
+    return scan_fda_sources(db_path, config_dir=config_dir, run_id=run_id)
 
 
-def _scan_federal_register(db_path: Path, config_dir: Path) -> Any:
+def _scan_federal_register(db_path: Path, config_dir: Path, run_id: str) -> Any:
     from peptide_watch.sources.federal_register import scan_federal_register
 
-    return scan_federal_register(db_path, config_dir=config_dir)
+    return scan_federal_register(db_path, config_dir=config_dir, run_id=run_id)
 
 
-def _scan_company_pages(db_path: Path, config_dir: Path) -> Any:
+def _scan_company_pages(db_path: Path, config_dir: Path, run_id: str) -> Any:
     from peptide_watch.sources.company_pages import scan_company_pages
 
-    return scan_company_pages(db_path, config_dir=config_dir)
+    return scan_company_pages(db_path, config_dir=config_dir, run_id=run_id)
 
 
-def _scan_sec(db_path: Path, config_dir: Path) -> Any:
+def _scan_sec(db_path: Path, config_dir: Path, run_id: str) -> Any:
     from peptide_watch.sources.sec import scan_sec_filings
 
-    return scan_sec_filings(db_path, config_dir=config_dir)
+    return scan_sec_filings(db_path, config_dir=config_dir, run_id=run_id)
 
 
 DEFAULT_SCANNERS: dict[str, Scanner] = {
@@ -214,7 +214,7 @@ def _execute_task(
     ledger.start_task(connection, run_id, source_id)
     logger.info("task started", extra={**context, "event": "task_started"})
     try:
-        result = scanner(db, config_dir)
+        result = scanner(db, config_dir, run_id)
     except (KeyboardInterrupt, SystemExit):
         ledger.finish_task(connection, run_id, source_id, "error", error="interrupted")
         raise
@@ -226,6 +226,15 @@ def _execute_task(
         return
 
     counts = {field: int(getattr(result, field, 0) or 0) for field in COUNT_FIELDS}
+    entry_errors = list(getattr(result, "errors", []) or [])
+    if entry_errors:
+        counts["source_errors"] = len(entry_errors)
+        logger.warning(
+            "task finished with %d per-entry errors: %s",
+            len(entry_errors),
+            "; ".join(entry_errors[:3]),
+            extra={**context, "event": "task_partial_errors"},
+        )
     ledger.finish_task(connection, run_id, source_id, "done", counts=counts)
     logger.info(
         "task done",

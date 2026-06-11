@@ -12,7 +12,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from peptide_watch.config import WatchConfig
-from peptide_watch.database import init_db
+from peptide_watch.database import connect, init_db
+from peptide_watch.events import ad_hoc_run_id, insert_event
 
 STATUS_PATTERNS = {
     "503A Bulks List": re.compile(r"\b503A\s+Bulks?\s+List\b", re.IGNORECASE),
@@ -47,6 +48,8 @@ class RegulatoryDocument(BaseModel):
     docket_ids: list[str] = Field(default_factory=list)
     content_hash: str
     content_text: str
+    raw_sha256: str = ""
+    parser_version: int = 1
     peptide_ids: list[str] = Field(default_factory=list)
     matched_aliases: list[str] = Field(default_factory=list)
     route_notes: dict[str, list[str]] = Field(default_factory=dict)
@@ -73,6 +76,7 @@ class RegulatoryScanResult(BaseModel):
     events_created: int
     source_ids: list[str] = Field(default_factory=list)
     queries: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 def build_regulatory_document(
@@ -89,8 +93,15 @@ def build_regulatory_document(
     docket_ids: list[str] | None = None,
     metadata: dict[str, Any] | None = None,
     content_hash: str | None = None,
+    raw_content: bytes | None = None,
+    parser_version: int = 1,
 ) -> RegulatoryDocument:
-    """Create a normalized regulatory document with peptide/status matches."""
+    """Create a normalized regulatory document with peptide/status matches.
+
+    ``content_hash`` is canonical (over the normalized text) and drives change
+    detection; ``raw_content`` is the exact fetched payload, hashed separately
+    so volatile markup never looks like a content change.
+    """
 
     normalized_text = normalize_text(content_text)
     peptide_ids, matched_aliases = match_peptide_aliases(normalized_text, config)
@@ -105,6 +116,8 @@ def build_regulatory_document(
         docket_ids=sorted(set(docket_ids or [])),
         content_hash=content_hash or hash_bytes(normalized_text.encode("utf-8")),
         content_text=normalized_text,
+        raw_sha256=hash_bytes(raw_content) if raw_content is not None else "",
+        parser_version=parser_version,
         peptide_ids=peptide_ids,
         matched_aliases=matched_aliases,
         route_notes=extract_route_notes(normalized_text, peptide_ids, matched_aliases, config),
@@ -113,53 +126,103 @@ def build_regulatory_document(
     )
 
 
-def store_regulatory_document(db_path: str | Path, document: RegulatoryDocument) -> StoreResult:
+def store_regulatory_document(
+    db_path: str | Path,
+    document: RegulatoryDocument,
+    *,
+    run_id: str | None = None,
+) -> StoreResult:
     """Upsert a regulatory document and emit reviewable new/change events."""
 
     init_db(db_path)
-    with _connect(db_path) as connection:
-        existing = _existing_document(connection, document.document_key)
-        source_document_id = _insert_source_document(connection, document)
+    connection = open_connection(db_path)
+    try:
+        result = write_regulatory_document(
+            connection, document, run_id=run_id or ad_hoc_run_id()
+        )
+        connection.commit()
+        return result
+    finally:
+        connection.close()
 
-        if existing is None:
-            _insert_document(connection, document)
-            _insert_snapshot(connection, document)
-            _create_event(
-                connection,
-                document,
-                source_document_id,
-                event_type=_new_event_type(document),
-                title=f"Regulatory document detected: {document.title or document.document_key}",
-                what_changed=(
-                    "Confirmed fact: an official public regulatory source was detected and "
-                    f"stored from {document.url}."
-                ),
-                severity=_severity_for_document(document, changed=False),
-            )
-            connection.commit()
-            return StoreResult(document_key=document.document_key, inserted=True, changed=False, events_created=1)
 
-        if existing["content_hash"] == document.content_hash:
-            _touch_document(connection, document)
-            connection.commit()
-            return StoreResult(document_key=document.document_key, inserted=False, changed=False, events_created=0)
+def write_regulatory_document(
+    connection: sqlite3.Connection,
+    document: RegulatoryDocument,
+    *,
+    run_id: str,
+) -> StoreResult:
+    """Write one document's full state (record + snapshot + events), no commit.
 
+    The caller owns the transaction so the whole write set is atomic.
+    """
+
+    existing = _existing_document(connection, document.document_key)
+
+    if existing is None:
+        _insert_document(connection, document)
         _insert_snapshot(connection, document)
-        _update_document(connection, document)
-        _create_event(
+        source_document_id = _insert_source_document(connection, document)
+        created = _create_event(
             connection,
             document,
             source_document_id,
-            event_type=_changed_event_type(document),
-            title=f"Regulatory document changed: {document.title or document.document_key}",
+            run_id=run_id,
+            event_type=_new_event_type(document),
+            field="",
+            old_value="",
+            new_value=document.content_hash,
+            title=f"Regulatory document detected: {document.title or document.document_key}",
             what_changed=(
-                "Confirmed fact: content hash changed for an official public regulatory source. "
-                f"Previous hash {existing['content_hash']} changed to {document.content_hash}."
+                "Confirmed fact: an official public regulatory source was detected and "
+                f"stored from {document.url}."
             ),
-            severity=_severity_for_document(document, changed=True),
+            severity=_severity_for_document(document, changed=False),
         )
-        connection.commit()
-        return StoreResult(document_key=document.document_key, inserted=False, changed=True, events_created=1)
+        return StoreResult(
+            document_key=document.document_key,
+            inserted=True,
+            changed=False,
+            events_created=int(created),
+        )
+
+    if existing["content_hash"] == document.content_hash:
+        _touch_document(connection, document)
+        return StoreResult(document_key=document.document_key, inserted=False, changed=False, events_created=0)
+
+    previous_raw = _row_value(existing, "raw_sha256")
+    if previous_raw and document.raw_sha256 and previous_raw == document.raw_sha256:
+        # Identical fetched bytes parsed differently: a parser upgrade, not a
+        # content change. Update stored state silently.
+        _insert_snapshot(connection, document)
+        _update_document(connection, document)
+        return StoreResult(document_key=document.document_key, inserted=False, changed=False, events_created=0)
+
+    _insert_snapshot(connection, document)
+    _update_document(connection, document)
+    source_document_id = _insert_source_document(connection, document)
+    created = _create_event(
+        connection,
+        document,
+        source_document_id,
+        run_id=run_id,
+        event_type=_changed_event_type(document),
+        field="content",
+        old_value=str(existing["content_hash"]),
+        new_value=document.content_hash,
+        title=f"Regulatory document changed: {document.title or document.document_key}",
+        what_changed=(
+            "Confirmed fact: content hash changed for an official public regulatory source. "
+            f"Previous hash {existing['content_hash']} changed to {document.content_hash}."
+        ),
+        severity=_severity_for_document(document, changed=True),
+    )
+    return StoreResult(
+        document_key=document.document_key,
+        inserted=False,
+        changed=True,
+        events_created=int(created),
+    )
 
 
 def list_regulatory_documents(
@@ -179,7 +242,7 @@ def list_regulatory_documents(
         where = "WHERE source_id LIKE ?"
         params.append(f"{source_prefix}%")
     params.append(limit)
-    with _connect(db_path) as connection:
+    with open_connection(db_path) as connection:
         rows = connection.execute(
             f"""
             SELECT *
@@ -295,9 +358,11 @@ def _insert_document(connection: sqlite3.Connection, document: RegulatoryDocumen
           matched_aliases_json,
           route_notes_json,
           status_terms_json,
-          metadata_json
+          metadata_json,
+          raw_sha256,
+          parser_version
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         _document_values(document),
     )
@@ -321,6 +386,8 @@ def _update_document(connection: sqlite3.Connection, document: RegulatoryDocumen
             route_notes_json = ?,
             status_terms_json = ?,
             metadata_json = ?,
+            raw_sha256 = ?,
+            parser_version = ?,
             last_seen_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
         WHERE document_key = ?
@@ -336,13 +403,17 @@ def _touch_document(connection: sqlite3.Connection, document: RegulatoryDocument
         SET last_seen_at = CURRENT_TIMESTAMP,
             matched_aliases_json = ?,
             peptide_ids_json = ?,
-            status_terms_json = ?
+            status_terms_json = ?,
+            raw_sha256 = ?,
+            parser_version = ?
         WHERE document_key = ?
         """,
         (
             _json(document.matched_aliases),
             _json(document.peptide_ids),
             _json(document.status_terms),
+            document.raw_sha256,
+            document.parser_version,
             document.document_key,
         ),
     )
@@ -365,6 +436,8 @@ def _document_values(document: RegulatoryDocument) -> tuple[Any, ...]:
         _json(document.route_notes),
         _json(document.status_terms),
         _json(document.metadata),
+        document.raw_sha256,
+        document.parser_version,
     )
 
 
@@ -376,9 +449,11 @@ def _insert_snapshot(connection: sqlite3.Connection, document: RegulatoryDocumen
           content_hash,
           url,
           content_text,
-          metadata_json
+          metadata_json,
+          raw_sha256,
+          parser_version
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             document.document_key,
@@ -386,6 +461,8 @@ def _insert_snapshot(connection: sqlite3.Connection, document: RegulatoryDocumen
             document.url,
             document.content_text,
             _json(document.metadata),
+            document.raw_sha256,
+            document.parser_version,
         ),
     )
 
@@ -413,44 +490,41 @@ def _create_event(
     document: RegulatoryDocument,
     source_document_id: int,
     *,
+    run_id: str,
     event_type: str,
+    field: str,
+    old_value: str,
+    new_value: str,
     title: str,
     what_changed: str,
     severity: str,
-) -> None:
-    peptide_id = document.peptide_ids[0] if document.peptide_ids else None
-    connection.execute(
-        """
-        INSERT INTO events (
-          event_type,
-          peptide_id,
-          source_document_id,
-          title,
-          what_changed,
-          why_it_matters,
-          confidence,
-          severity,
-          directness,
-          stock_market_relevance,
-          needs_review
-        )
-        VALUES (?, ?, ?, ?, ?, ?, 'high', ?, 'direct', ?, 1)
-        """,
-        (
-            event_type,
-            peptide_id,
-            source_document_id,
-            title,
-            what_changed,
-            (
-                "Confirmed fact: this event comes from an official public regulatory source. "
-                "Inference: regulatory-source changes may warrant follow-up research. "
-                "Speculation: possible market relevance is uncertain and requires review; "
-                "PCAC or 503A movement is not FDA drug approval."
-            ),
-            severity,
-            "Possible market relevance only; this is not a buy/sell recommendation. Verify independently.",
+) -> bool:
+    return insert_event(
+        connection,
+        source_id=document.source_id,
+        external_id=document.document_key,
+        event_type=event_type,
+        field=field,
+        old_value=old_value,
+        new_value=new_value,
+        run_id=run_id,
+        title=title,
+        what_changed=what_changed,
+        why_it_matters=(
+            "Confirmed fact: this event comes from an official public regulatory source. "
+            "Inference: regulatory-source changes may warrant follow-up research. "
+            "Speculation: possible market relevance is uncertain and requires review; "
+            "PCAC or 503A movement is not FDA drug approval."
         ),
+        confidence="high",
+        severity=severity,
+        directness="direct",
+        stock_market_relevance=(
+            "Possible market relevance only; this is not a buy/sell recommendation. "
+            "Verify independently."
+        ),
+        peptide_id=document.peptide_ids[0] if document.peptide_ids else None,
+        source_document_id=source_document_id,
     )
 
 
@@ -512,14 +586,22 @@ def _row_to_document(row: sqlite3.Row) -> RegulatoryDocument:
             "route_notes": json.loads(row["route_notes_json"]),
             "status_terms": json.loads(row["status_terms_json"]),
             "metadata": json.loads(row["metadata_json"]),
+            "raw_sha256": _row_value(row, "raw_sha256") or "",
+            "parser_version": _row_value(row, "parser_version") or 0,
         }
     )
 
 
-def _connect(db_path: str | Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path)
+def _row_value(row: sqlite3.Row, key: str) -> Any:
+    try:
+        return row[key]
+    except IndexError:
+        return None
+
+
+def open_connection(db_path: str | Path) -> sqlite3.Connection:
+    connection = connect(db_path)
     connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 

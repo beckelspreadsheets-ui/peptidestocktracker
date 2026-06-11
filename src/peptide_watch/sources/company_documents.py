@@ -12,7 +12,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from peptide_watch.config import CompanyConfig, WatchConfig
-from peptide_watch.database import init_db
+from peptide_watch.database import connect, init_db
+from peptide_watch.events import ad_hoc_run_id, insert_event
 from peptide_watch.sources.regulatory import match_peptide_aliases, normalize_text
 
 CATALYST_KEYWORD_PATTERNS = {
@@ -72,6 +73,8 @@ class CompanyDocument(BaseModel):
     source_tier: str | None = None
     content_hash: str
     content_text: str
+    raw_sha256: str = ""
+    parser_version: int = 1
     peptide_ids: list[str] = Field(default_factory=list)
     matched_aliases: list[str] = Field(default_factory=list)
     company_matches: list[str] = Field(default_factory=list)
@@ -98,6 +101,7 @@ class CompanyMonitorScanResult(BaseModel):
     events_created: int
     source_ids: list[str] = Field(default_factory=list)
     company_ids: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 def build_company_document(
@@ -119,8 +123,15 @@ def build_company_document(
     source_tier: str | None = None,
     metadata: dict[str, Any] | None = None,
     content_hash: str | None = None,
+    raw_content: bytes | None = None,
+    parser_version: int = 1,
 ) -> CompanyDocument:
-    """Create a normalized company/news/filing document with review metadata."""
+    """Create a normalized company/news/filing document with review metadata.
+
+    ``content_hash`` is canonical (over the normalized text) and drives change
+    detection; ``raw_content`` is the exact fetched payload, hashed separately
+    so volatile markup never looks like a content change.
+    """
 
     normalized_text = normalize_text(content_text)
     peptide_ids, matched_aliases = match_peptide_aliases(normalized_text, config)
@@ -146,6 +157,8 @@ def build_company_document(
         source_tier=source_tier,
         content_hash=content_hash or hash_bytes(normalized_text.encode("utf-8")),
         content_text=normalized_text,
+        raw_sha256=hash_bytes(raw_content) if raw_content is not None else "",
+        parser_version=parser_version,
         peptide_ids=peptide_ids,
         matched_aliases=matched_aliases,
         company_matches=company_matches,
@@ -154,58 +167,93 @@ def build_company_document(
     )
 
 
-def store_company_document(db_path: str | Path, document: CompanyDocument) -> StoreResult:
+def store_company_document(
+    db_path: str | Path,
+    document: CompanyDocument,
+    *,
+    run_id: str | None = None,
+) -> StoreResult:
     """Upsert a company/news/filing document and emit reviewable events for matches."""
 
     init_db(db_path)
-    with _connect(db_path) as connection:
-        existing = _existing_document(connection, document.document_key)
-        source_document_id = _insert_source_document(connection, document)
+    connection = open_connection(db_path)
+    try:
+        result = write_company_document(
+            connection, document, run_id=run_id or ad_hoc_run_id()
+        )
+        connection.commit()
+        return result
+    finally:
+        connection.close()
 
-        if existing is None:
-            _insert_document(connection, document)
-            _insert_snapshot(connection, document)
-            events_created = _create_event_if_relevant(
-                connection,
-                document,
-                source_document_id,
-                changed=False,
-                previous_hash=None,
-            )
-            connection.commit()
-            return StoreResult(
-                document_key=document.document_key,
-                inserted=True,
-                changed=False,
-                events_created=events_created,
-            )
 
-        if existing["content_hash"] == document.content_hash:
-            _touch_document(connection, document)
-            connection.commit()
-            return StoreResult(
-                document_key=document.document_key,
-                inserted=False,
-                changed=False,
-                events_created=0,
-            )
+def write_company_document(
+    connection: sqlite3.Connection,
+    document: CompanyDocument,
+    *,
+    run_id: str,
+) -> StoreResult:
+    """Write one document's full state (record + snapshot + events), no commit.
 
+    The caller owns the transaction so the whole write set is atomic.
+    """
+
+    existing = _existing_document(connection, document.document_key)
+
+    if existing is None:
+        _insert_document(connection, document)
         _insert_snapshot(connection, document)
-        _update_document(connection, document)
         events_created = _create_event_if_relevant(
             connection,
             document,
-            source_document_id,
-            changed=True,
-            previous_hash=str(existing["content_hash"]),
+            run_id=run_id,
+            changed=False,
+            previous_hash=None,
         )
-        connection.commit()
+        return StoreResult(
+            document_key=document.document_key,
+            inserted=True,
+            changed=False,
+            events_created=events_created,
+        )
+
+    if existing["content_hash"] == document.content_hash:
+        _touch_document(connection, document)
         return StoreResult(
             document_key=document.document_key,
             inserted=False,
-            changed=True,
-            events_created=events_created,
+            changed=False,
+            events_created=0,
         )
+
+    previous_raw = _row_value(existing, "raw_sha256")
+    if previous_raw and document.raw_sha256 and previous_raw == document.raw_sha256:
+        # Identical fetched bytes parsed differently: a parser upgrade, not a
+        # content change. Update stored state silently.
+        _insert_snapshot(connection, document)
+        _update_document(connection, document)
+        return StoreResult(
+            document_key=document.document_key,
+            inserted=False,
+            changed=False,
+            events_created=0,
+        )
+
+    _insert_snapshot(connection, document)
+    _update_document(connection, document)
+    events_created = _create_event_if_relevant(
+        connection,
+        document,
+        run_id=run_id,
+        changed=True,
+        previous_hash=str(existing["content_hash"]),
+    )
+    return StoreResult(
+        document_key=document.document_key,
+        inserted=False,
+        changed=True,
+        events_created=events_created,
+    )
 
 
 def list_company_documents(
@@ -226,7 +274,7 @@ def list_company_documents(
         where = "WHERE source_type = ?"
         params.append(source_type)
     params.append(limit)
-    with _connect(db_path) as connection:
+    with open_connection(db_path) as connection:
         rows = connection.execute(
             f"""
             SELECT *
@@ -312,51 +360,35 @@ def source_tier_confidence(source_tier: str | None) -> str:
 def _create_event_if_relevant(
     connection: sqlite3.Connection,
     document: CompanyDocument,
-    source_document_id: int,
     *,
+    run_id: str,
     changed: bool,
     previous_hash: str | None,
 ) -> int:
     if not _has_relevant_match(document):
         return 0
 
-    peptide_id = document.peptide_ids[0] if document.peptide_ids else None
-    event_type = _event_type(document)
-    severity = _severity(document)
-    confidence = source_tier_confidence(document.source_tier)
-    title = _event_title(document, changed=changed)
-    what_changed = _what_changed(document, changed=changed, previous_hash=previous_hash)
-    connection.execute(
-        """
-        INSERT INTO events (
-          event_type,
-          peptide_id,
-          source_document_id,
-          title,
-          what_changed,
-          why_it_matters,
-          confidence,
-          severity,
-          directness,
-          stock_market_relevance,
-          needs_review
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-        """,
-        (
-            event_type,
-            peptide_id,
-            source_document_id,
-            title,
-            what_changed,
-            _why_it_matters(document),
-            confidence,
-            severity,
-            _directness(document),
-            _stock_market_relevance(document),
-        ),
+    source_document_id = _insert_source_document(connection, document)
+    created = insert_event(
+        connection,
+        source_id=document.source_id,
+        external_id=document.document_key,
+        event_type=_event_type(document),
+        field="content" if changed else "",
+        old_value=previous_hash or "",
+        new_value=document.content_hash,
+        run_id=run_id,
+        title=_event_title(document, changed=changed),
+        what_changed=_what_changed(document, changed=changed, previous_hash=previous_hash),
+        why_it_matters=_why_it_matters(document),
+        confidence=source_tier_confidence(document.source_tier),
+        severity=_severity(document),
+        directness=_directness(document),
+        stock_market_relevance=_stock_market_relevance(document),
+        peptide_id=document.peptide_ids[0] if document.peptide_ids else None,
+        source_document_id=source_document_id,
     )
-    return 1
+    return int(created)
 
 
 def _has_relevant_match(document: CompanyDocument) -> bool:
@@ -474,9 +506,11 @@ def _insert_document(connection: sqlite3.Connection, document: CompanyDocument) 
           matched_aliases_json,
           company_matches_json,
           keyword_matches_json,
-          metadata_json
+          metadata_json,
+          raw_sha256,
+          parser_version
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         _document_values(document),
     )
@@ -505,6 +539,8 @@ def _update_document(connection: sqlite3.Connection, document: CompanyDocument) 
             company_matches_json = ?,
             keyword_matches_json = ?,
             metadata_json = ?,
+            raw_sha256 = ?,
+            parser_version = ?,
             last_seen_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
         WHERE document_key = ?
@@ -521,7 +557,9 @@ def _touch_document(connection: sqlite3.Connection, document: CompanyDocument) -
             peptide_ids_json = ?,
             matched_aliases_json = ?,
             company_matches_json = ?,
-            keyword_matches_json = ?
+            keyword_matches_json = ?,
+            raw_sha256 = ?,
+            parser_version = ?
         WHERE document_key = ?
         """,
         (
@@ -529,6 +567,8 @@ def _touch_document(connection: sqlite3.Connection, document: CompanyDocument) -
             _json(document.matched_aliases),
             _json(document.company_matches),
             _json(document.keyword_matches),
+            document.raw_sha256,
+            document.parser_version,
             document.document_key,
         ),
     )
@@ -556,6 +596,8 @@ def _document_values(document: CompanyDocument) -> tuple[Any, ...]:
         _json(document.company_matches),
         _json(document.keyword_matches),
         _json(document.metadata),
+        document.raw_sha256,
+        document.parser_version,
     )
 
 
@@ -567,9 +609,11 @@ def _insert_snapshot(connection: sqlite3.Connection, document: CompanyDocument) 
           content_hash,
           url,
           content_text,
-          metadata_json
+          metadata_json,
+          raw_sha256,
+          parser_version
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             document.document_key,
@@ -577,6 +621,8 @@ def _insert_snapshot(connection: sqlite3.Connection, document: CompanyDocument) 
             document.url,
             document.content_text,
             _json(document.metadata),
+            document.raw_sha256,
+            document.parser_version,
         ),
     )
 
@@ -635,8 +681,17 @@ def _row_to_document(row: sqlite3.Row) -> CompanyDocument:
             "company_matches": json.loads(row["company_matches_json"]),
             "keyword_matches": json.loads(row["keyword_matches_json"]),
             "metadata": json.loads(row["metadata_json"]),
+            "raw_sha256": _row_value(row, "raw_sha256") or "",
+            "parser_version": _row_value(row, "parser_version") or 0,
         }
     )
+
+
+def _row_value(row: sqlite3.Row, key: str) -> Any:
+    try:
+        return row[key]
+    except IndexError:
+        return None
 
 
 def _company_by_id(config: WatchConfig, company_id: str | None) -> CompanyConfig | None:
@@ -660,10 +715,9 @@ def _contains_term(lowered_text: str, term: str) -> bool:
     return lowered_term in lowered_text
 
 
-def _connect(db_path: str | Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path)
+def open_connection(db_path: str | Path) -> sqlite3.Connection:
+    connection = connect(db_path)
     connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 

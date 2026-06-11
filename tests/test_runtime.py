@@ -31,7 +31,7 @@ class CountingScanner:
         self.calls = 0
         self.exception = exception
 
-    def __call__(self, db_path, config_dir):
+    def __call__(self, db_path, config_dir, run_id):
         self.calls += 1
         if self.exception is not None:
             raise self.exception

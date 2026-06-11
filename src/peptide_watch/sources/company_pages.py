@@ -11,15 +11,19 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel
 
 from peptide_watch.config import CompanyConfig, SourceConfig, WatchConfig, load_config
+from peptide_watch.database import init_db
+from peptide_watch.events import ad_hoc_run_id
 from peptide_watch.sources.company_documents import (
     CompanyDocument,
     CompanyMonitorScanResult,
     build_company_document,
     export_company_documents_markdown,
-    hash_bytes,
     list_company_documents,
-    store_company_document,
+    open_connection,
+    write_company_document,
 )
+
+PARSER_VERSION = 1
 
 
 class FetchedCompanyPage(BaseModel):
@@ -63,26 +67,52 @@ def scan_company_pages(
     config_dir: str | Path = "config",
     client: CompanyPageClient | None = None,
     source_ids: list[str] | None = None,
+    run_id: str | None = None,
 ) -> CompanyMonitorScanResult:
-    """Scan configured company IR/news/page sources and create review events."""
+    """Scan configured company IR/news/page sources and create review events.
+
+    Each source fails independently; a source's writes are one transaction.
+    """
 
     config = load_config(config_dir)
     selected = _selected_company_page_sources(config, source_ids)
     page_client = client or CompanyPageClient()
+    run_id = run_id or ad_hoc_run_id()
 
+    init_db(db_path)
+    connection = open_connection(db_path)
     fetched = stored = inserted = changed = events_created = 0
+    errors: list[str] = []
     company_ids: set[str] = set()
-    for source_id, source in selected.items():
-        fetched_page = page_client.fetch(source.url)
-        document = normalize_company_page(source_id, source, fetched_page, config)
-        result = store_company_document(db_path, document)
-        if document.company_key:
-            company_ids.add(document.company_key)
-        fetched += 1
-        stored += 1
-        inserted += int(result.inserted)
-        changed += int(result.changed)
-        events_created += result.events_created
+    try:
+        for source_id, source in selected.items():
+            try:
+                fetched_page = page_client.fetch(source.url)
+                fetched += 1
+                document = normalize_company_page(source_id, source, fetched_page, config)
+                result = write_company_document(connection, document, run_id=run_id)
+                connection.commit()
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as exc:
+                connection.rollback()
+                errors.append(f"{source_id}: {exc}")
+                continue
+            if document.company_key:
+                company_ids.add(document.company_key)
+            stored += 1
+            inserted += int(result.inserted)
+            changed += int(result.changed)
+            events_created += result.events_created
+    except BaseException:
+        connection.rollback()
+        connection.close()
+        raise
+    else:
+        connection.close()
+
+    if errors and stored == 0 and selected:
+        raise RuntimeError(f"Company page scan failed for all sources: {'; '.join(errors[:5])}")
 
     return CompanyMonitorScanResult(
         fetched=fetched,
@@ -92,6 +122,7 @@ def scan_company_pages(
         events_created=events_created,
         source_ids=list(selected),
         company_ids=sorted(company_ids),
+        errors=errors,
     )
 
 
@@ -128,7 +159,8 @@ def normalize_company_page(
             "public_private": company.public_private if company else None,
             "liquidity_risk": company.liquidity_risk if company else None,
         },
-        content_hash=hash_bytes(fetched.body),
+        raw_content=fetched.body,
+        parser_version=PARSER_VERSION,
     )
 
 

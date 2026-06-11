@@ -1,6 +1,6 @@
 # Peptide Watch — Engineering Hardening Roadmap
 
-**Status:** Draft v3 — PR1 and PR2 reconciled against code and implemented
+**Status:** Draft v4 — first slice complete (PR1, PR2, PR5 + atomicity fix) reconciled and implemented
 **Last updated:** 2026-06-11
 **Scope:** Reliability, correctness, and maintainability of the `peptide-watch` data pipeline
 **Out of scope:** Domain/watchlist content, research methodology
@@ -444,10 +444,44 @@ Each PR is independently shippable and reviewable. Bold = recommended first slic
 - JSON logging via stdlib (`JsonLogFormatter`), `run_id`/`source_id` bound through `extra`.
   Run summary rolled up from `run_tasks` into `runs.summary_json`, printed as the CLI
   epilogue (`format_summary`, reusable as digest header).
-- **Deferred to PR3/4:** single-transaction-per-source atomicity. The existing scanners open
-  their own connections and commit per record internally; wrapping them is the adapter
-  migration's job. Ledger state itself is transactional, and resume-without-duplicates holds
-  because completed tasks are never re-executed and the stores are hash-deduped upserts.
+- ~~**Deferred to PR3/4:** single-transaction-per-source atomicity.~~ **Resolved in PR5** —
+  see below. (Closer reading showed per-record write sets were already single-transaction;
+  the real gaps were connection-per-record without pragmas and no per-entry failure
+  isolation inside a scanner family.)
+
+**PR5 + atomicity fix (2026-06-11).** Findings and adaptations:
+
+- **The two-hash design fixed a live false-positive bug:** `normalize_fda_document`,
+  `normalize_company_page`, `normalize_sec_filing`, and `normalize_federal_register_document`
+  all overrode the canonical text hash with a hash of the **raw fetched body**, so any
+  volatile markup change fired a change event. Now `content_hash` is always canonical (over
+  normalized extracted text) and the raw payload is hashed separately into a new
+  `raw_sha256` column (records + snapshots, migration `0002`).
+- **Event identity** (`src/peptide_watch/events.py`): every event row carries
+  `source_id, external_id, field, old_value, new_value, run_id` hashed into an
+  `identity_key` with a partial unique index; insertion is `INSERT OR IGNORE`. `run_id` is
+  in the key (per-run uniqueness, the recommended option), so A→B→A→B emits one event per
+  genuine transition while duplicates within one run/resume are dropped. Stores called
+  outside a tracked run get an `adhoc-` run id. Actual values are stored instead of the
+  spec's `old_hash/new_hash` — they double as review evidence and are small.
+- **Parser versioning:** `PARSER_VERSION` per source module, stored on records/snapshots
+  (0 = pre-versioning rows). Suppression rule: canonical hash changed but raw bytes
+  identical → silent re-extraction update, no events. Legacy rows with empty `raw_sha256`
+  never suppress.
+- **Disappearance hysteresis is clinicaltrials-only** (`miss_count`, threshold 3, alert
+  fires exactly at the threshold, reset on reappearance), and only on full clean sweeps —
+  partial scans or scans with fetch errors record no misses. The other families are
+  config-keyed pages or rolling query windows where absence is meaningless; revisit per
+  adapter in P1.
+- **Atomicity/isolation (the PR2 deviation):** every `scan_*` now opens one
+  `database.connect()` connection (WAL/busy_timeout), `init_db` once, and commits once per
+  record write-set (record + snapshot + events atomic); a failed entry rolls back cleanly.
+  Per-entry try/except inside each family: one bad FDA page / company page / SEC company /
+  Federal Register query no longer kills its siblings — errors are collected into
+  `result.errors`, surfaced as `source_errors` in the run-task counts, and the task only
+  raises (→ circuit breaker) when *every* entry failed. Stores split into path-based
+  back-compat wrappers and `write_*(connection, ...)` cores; `source_documents` rows are now
+  only written on event-producing paths instead of every fetch.
 
 ## Progress checklist
 
@@ -455,7 +489,7 @@ Each PR is independently shippable and reviewable. Bold = recommended first slic
 - [x] PR2 — run ledger, failure isolation, logging, summary, migrations runner
 - [ ] PR3 — adapter protocol + shared HTTP client (one adapter migrated)
 - [ ] PR4 — remaining adapters migrated; conditional GET + cursors live
-- [ ] PR5 — change-detection rework (two-hash, event identity, hysteresis)
+- [x] PR5 — change-detection rework (two-hash, event identity, hysteresis) + per-source transactions/isolation pulled forward from PR3/4
 - [ ] PR6 — outbox alert pipeline, severity tiers, batching, digest
 - [ ] PR7 — content-addressed snapshots, replay, verify, immutability
 - [ ] PR8 — CI language gate
