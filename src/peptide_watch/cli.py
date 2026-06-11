@@ -11,6 +11,8 @@ from peptide_watch.claims import (
     seed_claims_from_markdown,
     update_claim_status,
 )
+from peptide_watch.config import load_config
+from peptide_watch.database import backup_db as backup_database
 from peptide_watch.database import init_db as initialize_database
 from peptide_watch.sources.company_pages import (
     CompanyPageClient,
@@ -45,6 +47,7 @@ from peptide_watch.sources.sec import (
 )
 
 app = typer.Typer(help="Peptide Stock Tracker CLI", no_args_is_help=True)
+config_app = typer.Typer(help="Validate repository configuration.", no_args_is_help=True)
 claims_app = typer.Typer(help="Manage claim registry records.", no_args_is_help=True)
 clinicaltrials_app = typer.Typer(
     help="Scan and inspect official ClinicalTrials.gov records.",
@@ -60,6 +63,7 @@ company_pages_app = typer.Typer(
     no_args_is_help=True,
 )
 sec_app = typer.Typer(help="Scan and inspect public SEC EDGAR filings.", no_args_is_help=True)
+app.add_typer(config_app, name="config")
 app.add_typer(claims_app, name="claims")
 app.add_typer(clinicaltrials_app, name="clinicaltrials")
 app.add_typer(fda_app, name="fda")
@@ -85,6 +89,67 @@ def init_db(
 
     initialized_path = initialize_database(db)
     typer.echo(f"Initialized SQLite database at {initialized_path}")
+
+
+@app.command("backup-db")
+def backup_db(
+    db: Path = typer.Option(
+        Path("data/watch.db"),
+        "--db",
+        help="SQLite database path to back up.",
+    ),
+    backups_dir: Path = typer.Option(
+        Path("backups"),
+        "--backups-dir",
+        help="Directory to write dated backup files into.",
+    ),
+) -> None:
+    """Write a consistent dated backup of the database via VACUUM INTO."""
+
+    try:
+        target = backup_database(db, backups_dir)
+    except FileNotFoundError as exc:
+        typer.echo(f"Backup failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Backed up {db} to {target}")
+
+
+@config_app.command("check")
+def config_check(
+    config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
+) -> None:
+    """Validate all config files and dry-run-instantiate every source client."""
+
+    try:
+        config = load_config(config_dir)
+    except Exception as exc:
+        typer.echo(f"Config check failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    clients = {
+        "clinicaltrials": ClinicalTrialsClient,
+        "fda": FdaClient,
+        "federal_register": FederalRegisterClient,
+        "company_pages": CompanyPageClient,
+        "sec_edgar": SecEdgarClient,
+    }
+    failures: list[str] = []
+    for name, client_class in clients.items():
+        try:
+            client_class()
+        except Exception as exc:
+            failures.append(f"{name}: {exc}")
+    if failures:
+        for failure in failures:
+            typer.echo(f"Client instantiation failed: {failure}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(
+        "Config OK: "
+        f"{len(config.peptides)} peptides, {len(config.companies)} companies, "
+        f"{len(config.sources)} sources, {len(config.queries)} query groups, "
+        f"{len(clients)} source clients instantiated."
+    )
 
 
 @claims_app.command("add")

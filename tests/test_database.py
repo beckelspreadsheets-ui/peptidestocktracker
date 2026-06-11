@@ -1,7 +1,7 @@
 import sqlite3
 
 from peptide_watch.config import UNVERIFIED_CLAIM_STATUS
-from peptide_watch.database import REQUIRED_TABLES, init_db, table_names
+from peptide_watch.database import REQUIRED_TABLES, backup_db, connect, init_db, table_names
 
 
 def test_init_db_creates_required_tables(tmp_path) -> None:
@@ -12,6 +12,47 @@ def test_init_db_creates_required_tables(tmp_path) -> None:
     assert initialized == db_path
     assert db_path.exists()
     assert REQUIRED_TABLES <= table_names(db_path)
+
+
+def test_connect_applies_pragmas(tmp_path) -> None:
+    db_path = init_db(tmp_path / "watch.db")
+
+    connection = connect(db_path)
+    try:
+        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+        foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
+        busy_timeout = connection.execute("PRAGMA busy_timeout").fetchone()[0]
+    finally:
+        connection.close()
+
+    assert journal_mode == "wal"
+    assert foreign_keys == 1
+    assert busy_timeout == 5000
+
+
+def test_backup_db_writes_consistent_copy(tmp_path) -> None:
+    db_path = init_db(tmp_path / "watch.db")
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("INSERT INTO claims (claim_text) VALUES (?)", ("Backup test claim",))
+
+    backup_path = backup_db(db_path, tmp_path / "backups")
+
+    assert backup_path.exists()
+    assert backup_path.parent == tmp_path / "backups"
+    with sqlite3.connect(backup_path) as connection:
+        count = connection.execute("SELECT COUNT(*) FROM claims").fetchone()[0]
+    assert count == 1
+    assert REQUIRED_TABLES <= table_names(backup_path)
+
+
+def test_backup_db_overwrites_same_day_backup(tmp_path) -> None:
+    db_path = init_db(tmp_path / "watch.db")
+
+    first = backup_db(db_path, tmp_path / "backups")
+    second = backup_db(db_path, tmp_path / "backups")
+
+    assert first == second
+    assert second.exists()
 
 
 def test_claims_default_to_needs_verification(tmp_path) -> None:

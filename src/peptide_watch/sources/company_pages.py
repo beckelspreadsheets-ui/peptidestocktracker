@@ -175,8 +175,7 @@ def _is_company_page_source(source_id: str, source: SourceConfig) -> bool:
 
 
 def _source_company_id(source: SourceConfig) -> str | None:
-    value = source.model_extra.get("company_id") if source.model_extra else None
-    return str(value) if value else None
+    return source.company_id or None
 
 
 def _company_by_id(config: WatchConfig, company_id: str | None) -> CompanyConfig | None:

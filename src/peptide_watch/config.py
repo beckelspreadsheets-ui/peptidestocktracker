@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -10,9 +11,25 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 UNVERIFIED_CLAIM_STATUS = "needs_verification"
 
+# Secrets must come from the environment; config files may only reference them
+# by name (e.g. "${ALERT_TOKEN}"), never hold a literal value.
+SECRET_VALUE_PATTERNS = (
+    re.compile(r"ghp_[A-Za-z0-9]{20,}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9]{20,}"),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{30,}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+)
+SECRET_KEY_PATTERN = re.compile(r"(?i)(token|secret|password|passwd|api[_-]?key|auth[_-]?key)")
+ENV_REFERENCE_PATTERN = re.compile(r"^\$\{[A-Z][A-Z0-9_]*\}$")
+
 
 class PeptideConfig(BaseModel):
     """Canonical peptide configuration."""
+
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     name: str
@@ -38,7 +55,7 @@ class PeptideConfig(BaseModel):
 class CompanyConfig(BaseModel):
     """Company/watchlist configuration."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     name: str
@@ -71,12 +88,13 @@ class CompanyConfig(BaseModel):
 class SourceConfig(BaseModel):
     """Public-source monitor configuration."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     type: str
     url: str
     tier: str
     cadence: str
+    company_id: str | None = None
 
     @field_validator("type", "url", "tier", "cadence")
     @classmethod
@@ -88,6 +106,8 @@ class SourceConfig(BaseModel):
 
 
 class PeptidesFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     peptides: list[PeptideConfig]
 
     @model_validator(mode="after")
@@ -97,6 +117,8 @@ class PeptidesFile(BaseModel):
 
 
 class CompaniesFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     companies: list[CompanyConfig]
 
     @model_validator(mode="after")
@@ -106,6 +128,8 @@ class CompaniesFile(BaseModel):
 
 
 class SourcesFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     sources: dict[str, SourceConfig]
 
     @field_validator("sources")
@@ -117,6 +141,8 @@ class SourcesFile(BaseModel):
 
 
 class QueriesFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     queries: dict[str, list[str]]
 
     @field_validator("queries")
@@ -131,6 +157,8 @@ class QueriesFile(BaseModel):
 
 
 class AlertRulesFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     severity_rules: dict[str, list[str]]
     confidence_rules: dict[str, str]
     review_defaults: dict[str, str]
@@ -187,7 +215,38 @@ def _load_yaml(path: Path) -> dict[str, Any]:
         return {}
     if not isinstance(loaded, dict):
         raise ValueError(f"config file must contain a mapping: {path}")
+    _reject_secret_values(loaded, str(path))
     return loaded
+
+
+def _reject_secret_values(node: Any, location: str) -> None:
+    """Reject literal secrets in config; secrets belong in env vars only."""
+
+    if isinstance(node, dict):
+        for key, value in node.items():
+            child_location = f"{location}.{key}"
+            if (
+                isinstance(key, str)
+                and SECRET_KEY_PATTERN.search(key)
+                and isinstance(value, str)
+                and value
+                and not ENV_REFERENCE_PATTERN.match(value)
+            ):
+                raise ValueError(
+                    f"config key {child_location!r} looks like a secret; "
+                    'reference an environment variable instead (e.g. "${MY_TOKEN}")'
+                )
+            _reject_secret_values(value, child_location)
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            _reject_secret_values(value, f"{location}[{index}]")
+    elif isinstance(node, str):
+        for pattern in SECRET_VALUE_PATTERNS:
+            if pattern.search(node):
+                raise ValueError(
+                    f"config value at {location!r} matches a known secret/token shape; "
+                    "move it to an environment variable and reference it by name"
+                )
 
 
 def _reject_duplicate_ids(ids: Any, label: str) -> None:

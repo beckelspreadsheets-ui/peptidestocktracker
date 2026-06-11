@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -117,6 +118,38 @@ COMPANY_DOCUMENT_COLUMN_MIGRATIONS = {
 }
 
 
+def connect(db_path: str | Path) -> sqlite3.Connection:
+    """Open a SQLite connection with the standard durability/concurrency pragmas."""
+
+    connection = sqlite3.connect(db_path)
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA busy_timeout = 5000")
+    return connection
+
+
+def backup_db(db_path: str | Path, backups_dir: str | Path = "backups") -> Path:
+    """Write a consistent backup of the database via VACUUM INTO."""
+
+    source = Path(db_path)
+    if not source.exists():
+        raise FileNotFoundError(f"database not found: {source}")
+
+    backups = Path(backups_dir)
+    backups.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+    target = backups / f"{source.stem}-{stamp}.db"
+    if target.exists():
+        target.unlink()
+
+    connection = connect(source)
+    try:
+        connection.execute("VACUUM INTO ?", (str(target),))
+    finally:
+        connection.close()
+    return target
+
+
 def init_db(db_path: str | Path, schema_path: str | Path = DEFAULT_SCHEMA_PATH) -> Path:
     """Create or update a SQLite database by executing the repository schema."""
 
@@ -132,8 +165,7 @@ def init_db(db_path: str | Path, schema_path: str | Path = DEFAULT_SCHEMA_PATH) 
     if not sql.strip():
         raise ValueError(f"schema file is empty: {schema}")
 
-    with sqlite3.connect(target) as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
+    with connect(target) as connection:
         connection.executescript(sql)
         _migrate_claims_table(connection)
         _migrate_clinical_trials_table(connection)

@@ -1,7 +1,11 @@
+from pathlib import Path
+
 from typer.testing import CliRunner
 
 from peptide_watch.cli import app
 from peptide_watch.database import REQUIRED_TABLES, table_names
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_init_db_command_creates_database(tmp_path) -> None:
@@ -11,6 +15,36 @@ def test_init_db_command_creates_database(tmp_path) -> None:
     assert result.exit_code == 0, result.output
     assert db_path.exists()
     assert REQUIRED_TABLES <= table_names(db_path)
+
+
+def test_config_check_passes_on_repo_config() -> None:
+    result = CliRunner().invoke(app, ["config", "check", "--config-dir", str(ROOT / "config")])
+
+    assert result.exit_code == 0, result.output
+    assert "Config OK" in result.output
+
+
+def test_config_check_fails_on_missing_config_dir(tmp_path) -> None:
+    result = CliRunner().invoke(
+        app, ["config", "check", "--config-dir", str(tmp_path / "missing")]
+    )
+
+    assert result.exit_code == 1
+
+
+def test_backup_db_command_creates_backup(tmp_path) -> None:
+    db_path = tmp_path / "watch.db"
+    runner = CliRunner()
+    runner.invoke(app, ["init-db", "--db", str(db_path)])
+
+    result = runner.invoke(
+        app,
+        ["backup-db", "--db", str(db_path), "--backups-dir", str(tmp_path / "backups")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Backed up" in result.output
+    assert list((tmp_path / "backups").glob("watch-*.db"))
 
 
 def test_claims_seed_and_export_commands(tmp_path) -> None:
