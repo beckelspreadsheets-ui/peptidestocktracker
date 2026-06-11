@@ -44,6 +44,11 @@ sources:
     url: https://efts.sec.gov/LATEST/search-index
     tier: A
     cadence: daily
+  openfda_enforcement:
+    type: api
+    url: https://api.fda.gov/drug/enforcement.json
+    tier: A
+    cadence: daily
   pubmed:
     type: api
     url: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/

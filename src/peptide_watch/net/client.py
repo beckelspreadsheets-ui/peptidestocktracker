@@ -10,7 +10,10 @@ import threading
 import time
 from email.utils import parsedate_to_datetime
 from typing import Any, NamedTuple
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
+from urllib.request import Request as UrllibRequest
+from urllib.request import urlopen
 
 import httpx
 
@@ -32,6 +35,47 @@ class FetchResponse(NamedTuple):
     not_modified: bool
 
 
+class UrllibTransport(httpx.BaseTransport):
+    """httpx transport backed by stdlib urllib.
+
+    Some hosts (e.g. clinicaltrials.gov behind Akamai) 403-block httpx's TLS
+    fingerprint while accepting Python's stdlib client (live-verified). This
+    transport lets the shared client fall back per host without losing the
+    retry/throttle/conditional-GET layer.
+    """
+
+    def __init__(self, timeout: float = DEFAULT_TIMEOUT) -> None:
+        self._timeout = timeout
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            # let urllib manage these itself; identity encoding keeps the
+            # body bytes unprocessed
+            if key.lower() not in {"host", "connection", "accept-encoding", "content-length"}
+        }
+        urllib_request = UrllibRequest(
+            str(request.url), headers=headers, method=request.method
+        )
+        try:
+            with urlopen(urllib_request, timeout=self._timeout) as response:
+                body = response.read()
+                status = response.status
+                response_headers = [
+                    (key, value)
+                    for key, value in response.headers.items()
+                    if key.lower() not in {"transfer-encoding", "content-encoding"}
+                ]
+        except HTTPError as error:
+            body = error.read()
+            status = error.code
+            response_headers = list(error.headers.items()) if error.headers else []
+        return httpx.Response(
+            status, headers=response_headers, content=body, request=request
+        )
+
+
 class HttpClient:
     """One client wrapper providing retry/backoff (honoring Retry-After),
     connect/read timeouts, a per-host minimum request interval, conditional
@@ -45,6 +89,7 @@ class HttpClient:
         user_agent: str = DEFAULT_USER_AGENT,
         max_attempts: int = MAX_ATTEMPTS,
         transport: httpx.BaseTransport | None = None,
+        fallback_transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._rate_limit_seconds = rate_limit_seconds
         self._max_attempts = max(1, max_attempts)
@@ -54,6 +99,22 @@ class HttpClient:
             follow_redirects=True,
             transport=transport,
         )
+        # Hosts that 403-block httpx's TLS fingerprint fall back to a
+        # urllib-backed transport (real network runs only, unless a test
+        # injects its own fallback transport).
+        if fallback_transport is None and transport is None:
+            fallback_transport = UrllibTransport(timeout)
+        self._fallback_client = (
+            httpx.Client(
+                timeout=httpx.Timeout(timeout, connect=min(timeout, 10.0)),
+                headers={"User-Agent": user_agent},
+                follow_redirects=True,
+                transport=fallback_transport,
+            )
+            if fallback_transport is not None
+            else None
+        )
+        self._urllib_hosts: set[str] = set()
         self._last_request_at: dict[str, float] = {}
         self._lock = threading.Lock()
 
@@ -72,16 +133,32 @@ class HttpClient:
         if last_modified:
             headers["If-Modified-Since"] = last_modified
 
+        host = urlsplit(url).netloc
         attempt = 0
         while True:
             attempt += 1
             self._throttle(url)
+            client = (
+                self._fallback_client
+                if self._fallback_client is not None and host in self._urllib_hosts
+                else self._client
+            )
             try:
-                response = self._client.get(url, params=params, headers=headers)
+                response = client.get(url, params=params, headers=headers)
             except httpx.TransportError:
                 if attempt >= self._max_attempts:
                     raise
                 time.sleep(self._backoff(attempt, None))
+                continue
+            if (
+                response.status_code == 403
+                and self._fallback_client is not None
+                and host not in self._urllib_hosts
+            ):
+                # Possible TLS-fingerprint block: retry this host via urllib
+                # without consuming a retry attempt.
+                self._urllib_hosts.add(host)
+                attempt -= 1
                 continue
             if response.status_code in RETRYABLE_STATUS_CODES and attempt < self._max_attempts:
                 time.sleep(self._backoff(attempt, _retry_after_seconds(response)))

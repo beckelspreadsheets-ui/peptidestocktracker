@@ -588,10 +588,34 @@ drug substances + alias sweep), an explicit `pubmed` query group, and a second
 `sec_keywords` phrase set ("BPC 157" spacing variant, TB-500, pentadecapeptide, Epitalon,
 copper tripeptide-1) for the full-text discovery scanner.
 
+**PR11 — pre-soak additions (2026-06-11):**
+
+- **`openfda_enforcement` family** (live-validated, no key): searches openFDA drug
+  enforcement reports for watch terms across product descriptions and recall reasons.
+  Probe found a real Class II GHK-Cu injectable recall (compounding firm, sterility) —
+  proof of signal. Events are `fda_enforcement_report`, high tier when a watch peptide
+  matches. openFDA answers 404 for zero-match searches; the client treats that as empty.
+- **Webhook alert channel**: POSTs JSON to `PEPTIDE_WATCH_WEBHOOK_URL` (field name via
+  `PEPTIDE_WATCH_WEBHOOK_FIELD`, Discord default). URL is env-only per the secrets rule.
+- **Ops**: `scripts/peptide_watch_daily.sh` (scan → deliver → digest, logged),
+  `scripts/peptide_watch_weekly.sh` (verify + backup, pruned), `docs/OPERATIONS.md`
+  (cron for VPS, launchd for macOS, env vars, soak checklist).
+- **Full live end-to-end scan as the pre-soak gate.** First run produced ~400 events
+  (incl. a critical 503A status update, a critical PCAC update, 13 FDA enforcement
+  reports, and four discovery tickers not on the watchlist) and caught three real bugs,
+  all fixed and re-verified live:
+  1. SEC's `company_tickers.json` lives on `www.sec.gov`, not `data.sec.gov` (404).
+  2. openFDA's field-qualified `OR` syntax silently matches nothing — fields are now
+     searched separately and merged.
+  3. clinicaltrials.gov (Akamai) 403-blocks httpx's TLS fingerprint while accepting
+     stdlib urllib. The shared HttpClient now carries a urllib-backed fallback
+     transport: any host answering 403 to httpx is retried (and remembered) via
+     urllib, so future fingerprint-blocked hosts self-heal. ClinicalTrials client also
+     slowed to ~1 req/s.
+
 Candidates for the next round (need API keys or new adapters): USPTO Open Data Portal,
-EPO OPS, PatentsView (all key-gated patent APIs); openFDA enforcement/recall API;
-per-company newswire RSS feeds (verify exact feed URLs per company); EU CTR / WHO ICTRP
-trial registries; a real chat/webhook alert channel (token via env var).
+EPO OPS, PatentsView (all key-gated patent APIs); per-company newswire RSS feeds (verify
+exact feed URLs per company); EU CTR / WHO ICTRP trial registries.
 
 ---
 

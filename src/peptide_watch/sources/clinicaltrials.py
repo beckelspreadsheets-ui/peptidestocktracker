@@ -93,7 +93,9 @@ class ClinicalTrialsClient:
         *,
         base_url: str = CLINICALTRIALS_BASE_URL,
         timeout: float = 20.0,
-        rate_limit_seconds: float = 0.2,
+        # ClinicalTrials.gov throttles bursts with 403s (live-observed);
+        # stay near 1 request/second.
+        rate_limit_seconds: float = 1.0,
         user_agent: str = DEFAULT_USER_AGENT,
         http: HttpClient | None = None,
     ) -> None:

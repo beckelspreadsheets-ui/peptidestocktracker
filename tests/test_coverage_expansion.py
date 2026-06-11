@@ -196,3 +196,78 @@ def test_sec_fulltext_matches_watchlist_and_flags_discoveries(tmp_path) -> None:
     assert '"discovery":false' in known[1].replace(" ", "")
     assert '"discovery":true' in discovery[1].replace(" ", "")
     assert event_types == {"sec_filing_target_mention"}
+
+
+class FakeOpenFdaClient:
+    def search_enforcements(self, term: str, *, limit: int = 50):
+        if term != "GHK-Cu":
+            return []
+        return [
+            {
+                "recall_number": "D-0051-2026",
+                "status": "Ongoing",
+                "classification": "Class II",
+                "product_description": "GHK-Cu (Copper Peptide) for Injection, all strengths.",
+                "reason_for_recall": "Lack of Assurance of Sterility",
+                "recalling_firm": "GenoGenix LLC",
+                "report_date": "20251015",
+                "event_id": "97369",
+            }
+        ]
+
+
+def test_openfda_scan_stores_enforcement_and_emits_high_severity_event(tmp_path) -> None:
+    from peptide_watch.sources.openfda import scan_openfda_enforcement
+
+    db_path = init_db(tmp_path / "watch.db")
+    result = scan_openfda_enforcement(
+        db_path,
+        config_dir=CONFIG_DIR,
+        client=FakeOpenFdaClient(),
+        terms=["peptide", "GHK-Cu"],
+    )
+
+    assert result.stored == 1 and result.inserted == 1
+    with sqlite3.connect(db_path) as connection:
+        document = connection.execute(
+            "SELECT document_key, source_type, peptide_ids_json FROM regulatory_documents"
+        ).fetchone()
+        event = connection.execute("SELECT event_type, severity FROM events").fetchone()
+    assert document[0] == "openfda:D-0051-2026"
+    assert document[1] == "fda_enforcement"
+    assert "ghk_cu" in document[2]
+    assert event == ("fda_enforcement_report", "high")
+
+    rescan = scan_openfda_enforcement(
+        db_path, config_dir=CONFIG_DIR, client=FakeOpenFdaClient(), terms=["GHK-Cu"]
+    )
+    assert rescan.events_created == 0
+
+
+def test_webhook_channel_posts_json_from_env(monkeypatch) -> None:
+    import httpx
+
+    from peptide_watch.alerts.channels import WebhookChannel
+
+    posts = []
+
+    def handler(request):
+        posts.append((str(request.url), request.read()))
+        return httpx.Response(204)
+
+    monkeypatch.setenv("PEPTIDE_WATCH_WEBHOOK_URL", "https://hooks.example.com/abc")
+    channel = WebhookChannel(transport=httpx.MockTransport(handler))
+    channel.send("test alert")
+
+    assert posts[0][0] == "https://hooks.example.com/abc"
+    assert b'"content"' in posts[0][1] and b"test alert" in posts[0][1]
+
+
+def test_webhook_channel_requires_env_url(monkeypatch) -> None:
+    import pytest
+
+    from peptide_watch.alerts.channels import WebhookChannel
+
+    monkeypatch.delenv("PEPTIDE_WATCH_WEBHOOK_URL", raising=False)
+    with pytest.raises(ValueError, match="PEPTIDE_WATCH_WEBHOOK_URL"):
+        WebhookChannel()

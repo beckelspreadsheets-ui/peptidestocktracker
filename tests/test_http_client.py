@@ -144,3 +144,29 @@ def test_new_scanner_registers_without_touching_the_scan_loop() -> None:
             register_scanner("test_family")(_scan_test)
     finally:
         SCANNER_REGISTRY.pop("test_family", None)
+
+
+def test_403_falls_back_to_alternate_transport_per_host() -> None:
+    primary_calls = []
+    fallback_calls = []
+
+    def primary(request):
+        primary_calls.append(str(request.url))
+        return httpx.Response(403)
+
+    def fallback(request):
+        fallback_calls.append(str(request.url))
+        return httpx.Response(200, content=b"ok")
+
+    client = HttpClient(
+        rate_limit_seconds=0,
+        transport=httpx.MockTransport(primary),
+        fallback_transport=httpx.MockTransport(fallback),
+    )
+
+    first = client.get("https://blocked.example.gov/a")
+    second = client.get("https://blocked.example.gov/b")
+
+    assert first.body == b"ok" and second.body == b"ok"
+    assert len(primary_calls) == 1  # host remembered; no second 403
+    assert len(fallback_calls) == 2

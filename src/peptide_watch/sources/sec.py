@@ -29,6 +29,7 @@ PARSER_VERSION = 1
 
 SEC_DATA_BASE_URL = "https://data.sec.gov"
 SEC_ARCHIVES_BASE_URL = "https://www.sec.gov/Archives/edgar/data"
+SEC_TICKER_FILE_URL = "https://www.sec.gov/files/company_tickers.json"
 SEC_SOURCE_ID = "sec_edgar"
 DEFAULT_SEC_FORMS = ("10-K", "10-Q", "8-K", "S-1", "S-3", "424B", "DEF 14A", "20-F", "6-K")
 
@@ -79,7 +80,8 @@ class SecEdgarClient:
         )
 
     def get_company_tickers(self) -> dict[str, dict[str, Any]]:
-        return self._http.get_json(f"{self.data_base_url}/files/company_tickers.json")
+        # The ticker map lives on www.sec.gov, not data.sec.gov (live-verified).
+        return self._http.get_json(SEC_TICKER_FILE_URL)
 
     def get_submissions(self, cik: str) -> dict[str, Any]:
         padded_cik = _pad_cik(cik)

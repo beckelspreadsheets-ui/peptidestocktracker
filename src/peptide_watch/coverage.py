@@ -18,6 +18,7 @@ API_FAMILIES = {
     "sec_edgar": "sec_edgar",
     "pubmed": "pubmed",
     "sec_fulltext": "sec_fulltext",
+    "openfda_enforcement": "openfda_enforcement",
 }
 
 

@@ -41,6 +41,12 @@ queries:
   - '"bulk drug substances" compounding 503A'
   - '"bulk drug substances" compounding 503B'
   - '"BPC-157" OR "thymosin beta-4" OR "GHK-Cu"'
+  openfda:
+  - peptide
+  - BPC-157
+  - GHK-Cu
+  - thymosin
+  - TB-500
   pubmed:
   - '"BPC-157" OR "BPC 157" OR "pentadecapeptide BPC"'
   - '"TB-500" OR "thymosin beta-4 fragment"'

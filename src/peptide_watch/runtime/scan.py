@@ -100,6 +100,14 @@ def _scan_pubmed(db_path: Path, config_dir: Path, run_id: str) -> Any:
     return scan_pubmed(db_path, config_dir=config_dir, run_id=run_id)
 
 
+@register_scanner("openfda_enforcement")
+def _scan_openfda(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """openFDA drug enforcement/recall reports mentioning watch terms."""
+    from peptide_watch.sources.openfda import scan_openfda_enforcement
+
+    return scan_openfda_enforcement(db_path, config_dir=config_dir, run_id=run_id)
+
+
 @register_scanner("watched_pages")
 def _scan_watched_pages(db_path: Path, config_dir: Path, run_id: str) -> Any:
     """Catch-all change watch for page/RSS sources no other family claims."""

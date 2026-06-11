@@ -369,6 +369,7 @@ def config_check(
     """Validate config, dry-run-instantiate clients, and verify source coverage."""
 
     from peptide_watch.coverage import UNCLAIMED, source_coverage
+    from peptide_watch.sources.openfda import OpenFdaClient
     from peptide_watch.sources.pubmed import PubMedClient
     from peptide_watch.sources.sec_fulltext import SecFullTextClient
 
@@ -386,6 +387,7 @@ def config_check(
         "sec_edgar": SecEdgarClient,
         "sec_fulltext": SecFullTextClient,
         "pubmed": PubMedClient,
+        "openfda_enforcement": OpenFdaClient,
     }
     failures: list[str] = []
     for name, client_class in clients.items():
@@ -568,7 +570,7 @@ def clinicaltrials_scan(
     page_size: int = typer.Option(25, "--page-size", min=1, max=1000, help="API page size."),
     max_pages: int = typer.Option(1, "--max-pages", min=1, help="Maximum API pages per query."),
     rate_limit_seconds: float = typer.Option(
-        0.2,
+        1.0,
         "--rate-limit-seconds",
         min=0.0,
         help="Delay between API requests.",
