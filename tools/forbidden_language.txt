@@ -1,0 +1,10 @@
+# Regexes (one per line) that must never appear in user-facing strings.
+# The product rule: no recommendations, no advice; public sources only.
+\brecommend(s|ed|ing|ation|ations)?\b
+\badvice\b
+\badvise(s|d|r)?\b
+\byou should\b
+\b(buy|sell|hold) (this|now|the stock|immediately)\b
+\bguaranteed (gains?|returns?|profits?)\b
+\bcan'?t lose\b
+\b(take|use) this (peptide|product|compound)\b

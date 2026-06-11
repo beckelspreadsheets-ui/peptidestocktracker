@@ -1,6 +1,6 @@
 # Peptide Watch — Engineering Hardening Roadmap
 
-**Status:** Draft v4 — first slice complete (PR1, PR2, PR5 + atomicity fix) reconciled and implemented
+**Status:** v5 — all workstreams implemented (PR1–PR8); in live-soak validation
 **Last updated:** 2026-06-11
 **Scope:** Reliability, correctness, and maintainability of the `peptide-watch` data pipeline
 **Out of scope:** Domain/watchlist content, research methodology
@@ -483,16 +483,64 @@ Each PR is independently shippable and reviewable. Bold = recommended first slic
   back-compat wrappers and `write_*(connection, ...)` cores; `source_documents` rows are now
   only written on event-producing paths instead of every fetch.
 
+**PR3/4 (2026-06-11).** Findings and adaptations:
+
+- `net/client.py` `HttpClient` (httpx): retry with exponential backoff + jitter on
+  429/5xx/transport errors honoring `Retry-After`, hard connect/read timeouts, a per-host
+  minimum-interval throttle, conditional GETs, fixed honest UA. The retry loop is hand-rolled
+  rather than tenacity — Retry-After-aware waits need a custom tenacity wait function anyway
+  and the explicit loop is simpler to test.
+- All five source clients migrated off urllib onto the shared client with their public
+  interfaces preserved, so the scan loops and test fakes barely changed. The full
+  `RawDocument`/`SourceAdapter` protocol ceremony was **not** adopted: after PR5 the scanners
+  already share the write_*/per-entry-isolation/run_id shape, and the protocol's real payoffs
+  (shared networking, registry, replayable parsing) were delivered directly.
+- `source_cursors` is now live for the page families (`fda`, `company_pages`): stored
+  etag/last-modified are sent as validators; a 304 touches the cursor and writes nothing.
+  The JSON-API families (clinicaltrials, federal_register, sec) don't benefit from
+  validators and keep unconditional GETs.
+- Decorator-based `register_scanner` registry + `list-adapters` CLI.
+
+**PR6 (2026-06-11).** Transactional outbox as specced: `deliveries` keyed
+`(event_id, channel)`; enqueue is lazy and idempotent; replay-run events enqueue
+`suppressed`. Tiers: critical/high deliver immediately, one batched message per
+(run, source); medium/low sweep into the digest (headed by the latest run line).
+Channels are local built-ins (console, file) — a real chat/webhook channel plugs in later
+with its token from an env var only. A failed send leaves rows pending with attempts
+incremented.
+
+**PR7 (2026-06-11).** Content-addressed `raw_blobs` (keyed `raw_sha256`) captured by the
+regulatory/company stores alongside snapshots; clinical trials already snapshot the full raw
+payload. Immutability triggers on all three snapshot tables and `raw_blobs`. `verify`
+re-hashes blobs and clinical snapshots. `replay` re-derives clinical-trial records/events
+from full history with zero network (suppressed deliveries by default, `--deliver`
+overrides, `--rebuild` reproduces the records table); page/filing replay becomes possible
+for history captured from PR7 onward.
+
+**PR8 (2026-06-11).** `tools/check_language.py` + pattern/allowlist files; scans string
+literals via `ast` in the user-facing modules (`alerts/`, `sources/`, `cli.py`, `events.py`,
+`replay.py`) so comments and test fixtures can't false-positive; `# lang-ok:` line escape;
+the standing disclaimer sentence is allowlisted. Wired into CI after the test step.
+
 ## Progress checklist
 
 - [x] PR1 — config validation, pinning, SQLite hygiene
 - [x] PR2 — run ledger, failure isolation, logging, summary, migrations runner
-- [ ] PR3 — adapter protocol + shared HTTP client (one adapter migrated)
-- [ ] PR4 — remaining adapters migrated; conditional GET + cursors live
+- [x] PR3 — shared HTTP client (all clients migrated; protocol ceremony intentionally skipped)
+- [x] PR4 — conditional GET + cursors live for page families
 - [x] PR5 — change-detection rework (two-hash, event identity, hysteresis) + per-source transactions/isolation pulled forward from PR3/4
-- [ ] PR6 — outbox alert pipeline, severity tiers, batching, digest
-- [ ] PR7 — content-addressed snapshots, replay, verify, immutability
-- [ ] PR8 — CI language gate
+- [x] PR6 — outbox alert pipeline, severity tiers, batching, digest
+- [x] PR7 — content-addressed snapshots, replay, verify, immutability
+- [x] PR8 — CI language gate
+
+## Known coverage gaps (next after the soak week)
+
+`config/sources.yaml` declares four sources **no scanner family implements**: `pubmed`,
+`wipo_patentscope_rss`, `uspto_assignment`, and `sedar_plus` (`company_pages` explicitly
+excludes the last three; `pubmed` matches nothing). They silently contribute zero events
+today. With the registry + shared HTTP client they are now drop-in scanner functions;
+patent assignments and SEDAR+ filings are the two most likely to surface catalysts the
+current families miss.
 
 ---
 

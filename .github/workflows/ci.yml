@@ -17,3 +17,5 @@ jobs:
         run: uv run pytest
       - name: Validate config
         run: uv run peptide-watch config check
+      - name: Language gate
+        run: uv run python tools/check_language.py
