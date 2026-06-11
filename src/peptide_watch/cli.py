@@ -190,6 +190,77 @@ def runs_show(
             typer.echo(f"    error: {last_line}")
 
 
+@app.command("deliver")
+def deliver(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    channel: str = typer.Option("console", "--channel", help="Delivery channel: console or file."),
+    outbox_dir: Path = typer.Option(
+        Path("alerts_outbox"),
+        "--outbox-dir",
+        help="Directory for the file channel.",
+    ),
+) -> None:
+    """Send pending immediate-tier events, batched per source per run."""
+
+    from peptide_watch.alerts import deliver_immediate, get_channel
+
+    initialize_database(db)
+    try:
+        target = get_channel(channel, directory=outbox_dir)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    connection = connect(db)
+    try:
+        result = deliver_immediate(connection, target)
+    finally:
+        connection.close()
+    typer.echo(
+        f"Delivered {result['events_sent']} event(s) in {result['messages_sent']} message(s); "
+        f"{result['events_pending']} pending, {result['batches_failed']} batch(es) failed."
+    )
+    if result["batches_failed"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("digest")
+def digest(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    channel: str = typer.Option("console", "--channel", help="Delivery channel: console or file."),
+    outbox_dir: Path = typer.Option(
+        Path("alerts_outbox"),
+        "--outbox-dir",
+        help="Directory for the file channel.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print the digest without marking events sent.",
+    ),
+) -> None:
+    """Render pending digest-tier events (medium/low) and mark them sent."""
+
+    from peptide_watch.alerts import build_digest, get_channel, mark_digest_sent
+
+    initialize_database(db)
+    try:
+        target = get_channel(channel, directory=outbox_dir)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    connection = connect(db)
+    try:
+        text, event_ids = build_digest(connection, target.name)
+        if dry_run:
+            typer.echo(text)
+            return
+        target.send(text)
+        mark_digest_sent(connection, target.name, event_ids)
+    finally:
+        connection.close()
+    typer.echo(f"Digest delivered with {len(event_ids)} event(s).")
+
+
 @app.command("list-adapters")
 def list_adapters() -> None:
     """List registered source-family adapters."""
