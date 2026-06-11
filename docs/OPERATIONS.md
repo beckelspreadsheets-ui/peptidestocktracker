@@ -17,6 +17,7 @@ Optional environment variables (secrets live here, never in config — enforced 
 | `PEPTIDE_WATCH_WEBHOOK_URL` | Discord/Slack-style webhook URL (required for the webhook channel) |
 | `PEPTIDE_WATCH_WEBHOOK_FIELD` | JSON field name: `content` (default, Discord) or `text` (Slack) |
 | `PEPTIDE_WATCH_SEC_USER_AGENT` | Override the SEC EDGAR user-agent (SEC asks for a contact string) |
+| `PEPTIDE_WATCH_USPTO_API_KEY` | Free key from developer.uspto.gov; enables the `uspto_patents` family. Verify once with `peptide-watch uspto-check` — while the key is set, the family joins every scan automatically |
 
 ## The pipeline
 

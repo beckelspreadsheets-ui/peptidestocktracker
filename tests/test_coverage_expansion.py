@@ -271,3 +271,53 @@ def test_webhook_channel_requires_env_url(monkeypatch) -> None:
     monkeypatch.delenv("PEPTIDE_WATCH_WEBHOOK_URL", raising=False)
     with pytest.raises(ValueError, match="PEPTIDE_WATCH_WEBHOOK_URL"):
         WebhookChannel()
+
+
+class FakeUsptoClient:
+    api_key = "test-key"
+
+    def search(self, query: str, *, limit: int = 25):
+        return [
+            {
+                "applicationNumberText": "18123456",
+                "inventionTitle": "Stabilized BPC-157 transdermal composition",
+                "applicantName": "Example Therapeutics Inc.",
+            }
+        ]
+
+
+def test_uspto_scan_stores_patent_and_emits_high_severity_event(tmp_path) -> None:
+    from peptide_watch.sources.uspto import scan_uspto_patents
+
+    db_path = init_db(tmp_path / "watch.db")
+    result = scan_uspto_patents(
+        db_path, config_dir=CONFIG_DIR, client=FakeUsptoClient(), queries=['"BPC-157"']
+    )
+
+    assert result.stored == 1 and result.inserted == 1
+    with sqlite3.connect(db_path) as connection:
+        document = connection.execute(
+            "SELECT document_key, source_type FROM regulatory_documents"
+        ).fetchone()
+        event = connection.execute("SELECT event_type, severity FROM events").fetchone()
+    assert document == ("uspto:18123456", "uspto_patent")
+    assert event == ("patent_publication", "high")
+
+
+def test_uspto_record_extraction_handles_unknown_envelopes() -> None:
+    from peptide_watch.sources.uspto import _extract_records
+
+    assert _extract_records({"patentFileWrapperDataBag": [{"a": 1}]}) == [{"a": 1}]
+    assert _extract_records({"someFutureKey": [{"b": 2}], "count": 1}) == [{"b": 2}]
+    assert _extract_records({"count": 0}) == []
+
+
+def test_uspto_scan_without_key_raises_actionable_error(tmp_path, monkeypatch) -> None:
+    from peptide_watch.sources.uspto import scan_uspto_patents
+
+    monkeypatch.delenv("PEPTIDE_WATCH_USPTO_API_KEY", raising=False)
+    db_path = init_db(tmp_path / "watch.db")
+    import pytest
+
+    with pytest.raises(RuntimeError, match="PEPTIDE_WATCH_USPTO_API_KEY"):
+        scan_uspto_patents(db_path, config_dir=CONFIG_DIR, queries=['"BPC-157"'])

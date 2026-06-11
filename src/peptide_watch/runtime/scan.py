@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import json
 import logging
+import os
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -114,6 +115,18 @@ def _scan_watched_pages(db_path: Path, config_dir: Path, run_id: str) -> Any:
     from peptide_watch.sources.watched_pages import scan_watched_pages
 
     return scan_watched_pages(db_path, config_dir=config_dir, run_id=run_id)
+
+
+if os.environ.get("PEPTIDE_WATCH_USPTO_API_KEY"):
+    # Key-gated family: joins the nightly run only when the env key exists,
+    # so keyless installs never accumulate failed tasks. Verify the key with
+    # `peptide-watch uspto-check` first.
+    @register_scanner("uspto_patents")
+    def _scan_uspto(db_path: Path, config_dir: Path, run_id: str) -> Any:
+        """USPTO patent application search for watch terms (API-key gated)."""
+        from peptide_watch.sources.uspto import scan_uspto_patents
+
+        return scan_uspto_patents(db_path, config_dir=config_dir, run_id=run_id)
 
 
 DEFAULT_SCANNERS: dict[str, Scanner] = SCANNER_REGISTRY

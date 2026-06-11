@@ -328,6 +328,46 @@ def verify(
         raise typer.Exit(code=1)
 
 
+@app.command("uspto-check")
+def uspto_check(
+    query: str = typer.Option('"BPC-157"', "--query", help="Search phrase to test with."),
+) -> None:
+    """Verify the USPTO API key and print the live response shape.
+
+    Run this once after setting PEPTIDE_WATCH_USPTO_API_KEY; when it passes,
+    the uspto_patents family joins the scheduled scan automatically.
+    """
+
+    import json as json_module
+
+    from peptide_watch.sources.uspto import (
+        USPTO_API_KEY_ENV,
+        UsptoClient,
+        _extract_records,
+        api_key_present,
+    )
+
+    if not api_key_present():
+        typer.echo(f"{USPTO_API_KEY_ENV} is not set; export the key first.", err=True)
+        raise typer.Exit(code=1)
+    client = UsptoClient()
+    try:
+        payload = client.raw_search(query)
+    except Exception as exc:
+        typer.echo(f"USPTO check failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    records = _extract_records(payload)
+    typer.echo(f"Top-level keys: {', '.join(payload.keys())}")
+    typer.echo(f"Records extracted: {len(records)}")
+    if records:
+        typer.echo(f"First record keys: {', '.join(list(records[0].keys())[:20])}")
+        typer.echo(json_module.dumps(records[0], indent=1)[:1500])
+    typer.echo(
+        "USPTO key works. The uspto_patents family now joins every scan run "
+        "while the key is set (confirm with: peptide-watch list-adapters)."
+    )
+
+
 @app.command("list-adapters")
 def list_adapters() -> None:
     """List registered source-family adapters."""

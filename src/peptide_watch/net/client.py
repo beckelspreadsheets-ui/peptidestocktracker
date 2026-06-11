@@ -126,8 +126,11 @@ class HttpClient:
         accept: str = "*/*",
         etag: str | None = None,
         last_modified: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> FetchResponse:
         headers = {"Accept": accept}
+        if extra_headers:
+            headers.update(extra_headers)
         if etag:
             headers["If-None-Match"] = etag
         if last_modified:
@@ -184,8 +187,16 @@ class HttpClient:
                 not_modified=False,
             )
 
-    def get_json(self, url: str, *, params: dict[str, Any] | None = None) -> Any:
-        result = self.get(url, params=params, accept="application/json")
+    def get_json(
+        self,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> Any:
+        result = self.get(
+            url, params=params, accept="application/json", extra_headers=extra_headers
+        )
         return json.loads(result.body.decode("utf-8"))
 
     def get_text(self, url: str, *, accept: str = "text/plain,*/*") -> str:

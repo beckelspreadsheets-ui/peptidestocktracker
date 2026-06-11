@@ -536,6 +536,8 @@ def _create_event(
 
 
 def _new_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("uspto"):
+        return "patent_publication"
     if document.source_id.startswith("openfda"):
         return "fda_enforcement_report"
     if document.source_id.startswith("pubmed"):
@@ -552,6 +554,8 @@ def _new_event_type(document: RegulatoryDocument) -> str:
 
 
 def _changed_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("uspto"):
+        return "patent_publication"
     if document.source_id.startswith("openfda"):
         return "fda_enforcement_report"
     if document.source_id.startswith("pubmed"):
@@ -569,7 +573,7 @@ def _changed_event_type(document: RegulatoryDocument) -> str:
 
 def _severity_for_document(document: RegulatoryDocument, *, changed: bool) -> str:
     source_id = document.source_id.lower()
-    if source_id.startswith("openfda") and document.peptide_ids:
+    if source_id.startswith(("openfda", "uspto")) and document.peptide_ids:
         return "high"
     if changed and ("503a" in source_id or "pcac" in source_id):
         return "critical"

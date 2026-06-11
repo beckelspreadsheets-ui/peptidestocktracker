@@ -613,9 +613,20 @@ copper tripeptide-1) for the full-text discovery scanner.
      urllib, so future fingerprint-blocked hosts self-heal. ClinicalTrials client also
      slowed to ~1 req/s.
 
-Candidates for the next round (need API keys or new adapters): USPTO Open Data Portal,
-EPO OPS, PatentsView (all key-gated patent APIs); per-company newswire RSS feeds (verify
-exact feed URLs per company); EU CTR / WHO ICTRP trial registries.
+**PR12 — USPTO adapter, key-gated (2026-06-11).** Probes confirmed
+`api.uspto.gov/api/v1/patent/applications/search` is real (401 awaiting a key; the
+assignment-specific paths are unrouted). `sources/uspto.py` ships ready: key from
+`PEPTIDE_WATCH_USPTO_API_KEY` only, sent as `X-API-KEY` via a new `extra_headers` hook on
+the shared client. The normalizer is schema-tolerant — the full record JSON is the
+matchable text, so watch-term matching and `patent_publication` events (high tier on
+peptide match) work even if field names differ from the envelope guesses. The family
+registers itself **only when the key env var is set**, so keyless installs stay clean; run
+`peptide-watch uspto-check` once after exporting the key to verify it live and print the
+real response shape (tighten `_extract_records`/`_record_id` afterward if needed).
+
+Candidates for the next round: EPO OPS, PatentsView (key-gated patent APIs);
+per-company newswire RSS feeds (verify exact feed URLs per company); EU CTR / WHO ICTRP
+trial registries.
 
 ---
 
