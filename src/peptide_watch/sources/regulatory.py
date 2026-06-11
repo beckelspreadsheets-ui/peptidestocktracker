@@ -50,6 +50,7 @@ class RegulatoryDocument(BaseModel):
     content_text: str
     raw_sha256: str = ""
     parser_version: int = 1
+    raw_content: bytes | None = Field(default=None, exclude=True, repr=False)
     peptide_ids: list[str] = Field(default_factory=list)
     matched_aliases: list[str] = Field(default_factory=list)
     route_notes: dict[str, list[str]] = Field(default_factory=dict)
@@ -118,6 +119,7 @@ def build_regulatory_document(
         content_text=normalized_text,
         raw_sha256=hash_bytes(raw_content) if raw_content is not None else "",
         parser_version=parser_version,
+        raw_content=raw_content,
         peptide_ids=peptide_ids,
         matched_aliases=matched_aliases,
         route_notes=extract_route_notes(normalized_text, peptide_ids, matched_aliases, config),
@@ -442,6 +444,11 @@ def _document_values(document: RegulatoryDocument) -> tuple[Any, ...]:
 
 
 def _insert_snapshot(connection: sqlite3.Connection, document: RegulatoryDocument) -> None:
+    if document.raw_content is not None and document.raw_sha256:
+        connection.execute(
+            "INSERT OR IGNORE INTO raw_blobs (raw_sha256, content) VALUES (?, ?)",
+            (document.raw_sha256, document.raw_content),
+        )
     connection.execute(
         """
         INSERT OR IGNORE INTO regulatory_document_snapshots (

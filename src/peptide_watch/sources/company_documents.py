@@ -75,6 +75,7 @@ class CompanyDocument(BaseModel):
     content_text: str
     raw_sha256: str = ""
     parser_version: int = 1
+    raw_content: bytes | None = Field(default=None, exclude=True, repr=False)
     peptide_ids: list[str] = Field(default_factory=list)
     matched_aliases: list[str] = Field(default_factory=list)
     company_matches: list[str] = Field(default_factory=list)
@@ -159,6 +160,7 @@ def build_company_document(
         content_text=normalized_text,
         raw_sha256=hash_bytes(raw_content) if raw_content is not None else "",
         parser_version=parser_version,
+        raw_content=raw_content,
         peptide_ids=peptide_ids,
         matched_aliases=matched_aliases,
         company_matches=company_matches,
@@ -602,6 +604,11 @@ def _document_values(document: CompanyDocument) -> tuple[Any, ...]:
 
 
 def _insert_snapshot(connection: sqlite3.Connection, document: CompanyDocument) -> None:
+    if document.raw_content is not None and document.raw_sha256:
+        connection.execute(
+            "INSERT OR IGNORE INTO raw_blobs (raw_sha256, content) VALUES (?, ?)",
+            (document.raw_sha256, document.raw_content),
+        )
     connection.execute(
         """
         INSERT OR IGNORE INTO company_document_snapshots (

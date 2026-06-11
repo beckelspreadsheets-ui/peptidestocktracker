@@ -261,6 +261,73 @@ def digest(
     typer.echo(f"Digest delivered with {len(event_ids)} event(s).")
 
 
+@app.command("replay")
+def replay(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
+    source: str = typer.Option(
+        "clinicaltrials",
+        "--source",
+        help="Source family to replay (clinicaltrials has full snapshot history).",
+    ),
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        help="Only replay snapshots captured at or after this timestamp.",
+    ),
+    rebuild: bool = typer.Option(
+        False,
+        "--rebuild",
+        help="Drop and rebuild the records table from snapshots before replaying.",
+    ),
+    deliver: bool = typer.Option(
+        False,
+        "--deliver",
+        help="Allow replay events to be delivered instead of suppressed.",
+    ),
+) -> None:
+    """Re-derive records and events from stored snapshots, with zero network."""
+
+    from peptide_watch.replay import replay_clinicaltrials
+
+    if source != "clinicaltrials":
+        typer.echo(
+            f"Replay for {source!r} is not available yet: raw payloads for that family "
+            "are only captured from this version on (raw_blobs).",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    result = replay_clinicaltrials(
+        db, config_dir=config_dir, since=since, rebuild=rebuild, deliver=deliver
+    )
+    typer.echo(
+        f"Replay {result['run_id']}: {result['snapshots_replayed']} snapshots replayed, "
+        f"{result['inserted']} inserted, {result['changed']} changed, "
+        f"{result['events_created']} events created"
+        + ("." if deliver else " (deliveries suppressed).")
+    )
+
+
+@app.command("verify")
+def verify(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+) -> None:
+    """Re-hash stored raw payloads against their recorded checksums."""
+
+    from peptide_watch.replay import verify_integrity
+
+    result = verify_integrity(db)
+    typer.echo(
+        f"Verified {result['blobs_checked']} blob(s) and "
+        f"{result['snapshots_checked']} snapshot(s): "
+        f"{len(result['corrupted'])} corrupted."
+    )
+    for item in result["corrupted"]:
+        typer.echo(f"  corrupted: {item}", err=True)
+    if result["corrupted"]:
+        raise typer.Exit(code=1)
+
+
 @app.command("list-adapters")
 def list_adapters() -> None:
     """List registered source-family adapters."""
