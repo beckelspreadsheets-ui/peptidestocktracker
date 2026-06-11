@@ -543,7 +543,20 @@ def _uspto_event_type(document: RegulatoryDocument) -> str:
     return "patent_publication"
 
 
+def _regulations_event_type(document: RegulatoryDocument) -> str:
+    doc_type = str(document.metadata.get("document_type") or "").lower()
+    if document.metadata.get("open_for_comment"):
+        if "rule" in doc_type:
+            return "regulatory_rule_open_for_comment"
+        return "regulatory_comment_period_open"
+    if "submission" in doc_type or "comment" in doc_type:
+        return "regulatory_public_comment"
+    return "regulatory_docket_activity"
+
+
 def _new_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("regulations"):
+        return _regulations_event_type(document)
     if document.source_id.startswith("nih_reporter"):
         return "grant_award"
     if document.source_id.startswith("uspto"):
@@ -564,6 +577,8 @@ def _new_event_type(document: RegulatoryDocument) -> str:
 
 
 def _changed_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("regulations"):
+        return _regulations_event_type(document)
     if document.source_id.startswith("nih_reporter"):
         return "grant_award"
     if document.source_id.startswith("uspto"):
@@ -585,6 +600,15 @@ def _changed_event_type(document: RegulatoryDocument) -> str:
 
 def _severity_for_document(document: RegulatoryDocument, *, changed: bool) -> str:
     source_id = document.source_id.lower()
+    if source_id.startswith("regulations"):
+        doc_type = str(document.metadata.get("document_type") or "").lower()
+        if document.metadata.get("open_for_comment"):
+            # A rule being written that you can still comment on is the most
+            # actionable leading signal; a notice/meeting docket is high.
+            return "critical" if "rule" in doc_type else "high"
+        if "submission" in doc_type or "comment" in doc_type:
+            return "medium"  # a filed comment reveals who is positioning
+        return "medium"
     if source_id.startswith("uspto"):
         if document.metadata.get("assigned_company_public"):
             return "critical"  # peptide patent assigned to a public watchlist company

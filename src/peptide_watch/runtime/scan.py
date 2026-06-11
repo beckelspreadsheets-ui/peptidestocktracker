@@ -101,6 +101,14 @@ def _scan_pubmed(db_path: Path, config_dir: Path, run_id: str) -> Any:
     return scan_pubmed(db_path, config_dir=config_dir, run_id=run_id)
 
 
+@register_scanner("regulations_gov")
+def _scan_regulations(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """Regulations.gov dockets and public comments — leading regulatory signal."""
+    from peptide_watch.sources.regulations import scan_regulations
+
+    return scan_regulations(db_path, config_dir=config_dir, run_id=run_id)
+
+
 @register_scanner("nih_reporter")
 def _scan_nih_reporter(db_path: Path, config_dir: Path, run_id: str) -> Any:
     """NIH RePORTER federal grant awards mentioning watch terms (early signal)."""

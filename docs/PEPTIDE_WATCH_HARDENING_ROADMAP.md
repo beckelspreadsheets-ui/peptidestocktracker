@@ -640,9 +640,39 @@ real response shape (tighten `_extract_records`/`_record_id` afterward if needed
   feeds parse, items dedupe correctly on rescan. `watched_pages` now treats an explicit
   `type: rss` source as always-a-feed (empty feed → nothing, no HTML fallback).
 
-Candidates for the next round: EPO OPS, PatentsView (key-gated patent APIs); EU CTR /
-WHO ICTRP trial registries; additional per-company newswire feeds (PRNewswire/Business
-Wire — verify each company's exact feed URL).
+**PR14 — Regulations.gov, the leading regulatory signal (2026-06-11).** The Federal
+Register announces a *published* rule (coincident/lagging); Regulations.gov shows the docket
+**open**, the comment period **running**, and who is filing comments — the earliest public
+view of "regulations going in." `sources/regulations.py` queries the v4 documents API
+(`api.regulations.gov`) filtered to FDA (searchTerm tokenizes, so cross-agency matches are
+noise — live-verified, the filter removed EPA dockets). Severity tiers off how actionable
+the signal is: a **rule** open for comment → critical; a **notice/meeting docket** open for
+comment → high (this is where the PCAC peptide decisions happen — live-verified the
+FDA-2025-N-6895 PCAC docket the config already tracks is open for comment until 2026-07-23);
+a filed **public submission** → medium (reveals which companies/groups are positioning);
+other docket activity → medium. Uses the public DEMO_KEY by default (works out of the box,
+rate-limited); `PEPTIDE_WATCH_REGULATIONS_API_KEY` (free from api.data.gov) for headroom.
+
+### Leading vs lagging — the signal ladder
+
+Ordered earliest → latest, this is the analytic backbone for "ahead of the curve":
+
+1. **Regulations.gov docket open / comments** (PR14) — the rule is being *written*; commenters
+   are companies positioning. *Earliest.*
+2. **NIH RePORTER / SBIR** (PR13) — federal research money committed years before a product.
+3. **USPTO patent filings/assignments** (PR12) — IP staked, esp. assignment to a public co.
+4. **PubMed** (PR11) — published science.
+5. **ClinicalTrials.gov** — a trial exists.
+6. **SEC full-text discovery** (PR9) — a filer mentions the term (new entrant detection).
+7. **Federal Register / FDA pages & PDFs** — the rule/decision is *published*. *Coincident.*
+8. **openFDA enforcement, company pages, newswires** — it's already happening. *Lagging.*
+
+The tracker now spans all eight rungs. Highest-leverage future adds, by earliness:
+SBIR.gov all-agency awards (DoD/DARPA wound-healing money — endpoint was rate-limited at
+probe time, retry during soak); FDA 503B outsourcing-facility registration list (new
+manufacturing entrants); FDA drug-shortage database (compounding-demand driver); state
+boards of pharmacy (fragmented, lower priority). Also still open: EPO OPS / PatentsView
+(key-gated patents), EU CTR / WHO ICTRP (ex-US trials), per-company newswire feeds.
 
 ---
 

@@ -406,3 +406,71 @@ def test_globenewswire_feeds_route_to_watched_pages() -> None:
     coverage = source_coverage(config)
     assert coverage["gnw_bpc157"] == "watched_pages"
     assert coverage["gnw_tb500"] == "watched_pages"
+
+
+def _reg_doc(doc_id, *, doc_type, open_for_comment, comment_end="2026-07-23T03:59:59Z"):
+    return {
+        "id": doc_id,
+        "attributes": {
+            "title": "Pharmacy Compounding Advisory Committee; BPC-157 nomination",
+            "documentType": doc_type,
+            "agencyId": "FDA",
+            "docketId": doc_id.rsplit("-", 1)[0],
+            "openForComment": open_for_comment,
+            "commentEndDate": comment_end if open_for_comment else None,
+            "postedDate": "2026-06-10T05:00:00Z",
+            "highlightedContent": "nomination of <mark>BPC-157</mark> for compounding",
+        },
+    }
+
+
+class FakeRegulationsClient:
+    def __init__(self, documents):
+        self.documents = documents
+
+    def search(self, term, *, page_size=20):
+        return self.documents
+
+
+def test_regulations_notice_open_for_comment_is_high(tmp_path) -> None:
+    from peptide_watch.sources.regulations import scan_regulations
+
+    db_path = init_db(tmp_path / "watch.db")
+    client = FakeRegulationsClient([_reg_doc("FDA-2025-N-6895-0001", doc_type="Notice", open_for_comment=True)])
+    result = scan_regulations(db_path, config_dir=CONFIG_DIR, client=client, queries=["BPC-157"])
+
+    assert result.stored == 1
+    with sqlite3.connect(db_path) as connection:
+        document = connection.execute(
+            "SELECT document_key, peptide_ids_json FROM regulatory_documents"
+        ).fetchone()
+        event = connection.execute("SELECT event_type, severity FROM events").fetchone()
+    assert document[0] == "regulations:FDA-2025-N-6895-0001"
+    assert "bpc_157" in document[1]
+    assert event == ("regulatory_comment_period_open", "high")
+
+
+def test_regulations_proposed_rule_open_for_comment_is_critical(tmp_path) -> None:
+    from peptide_watch.sources.regulations import scan_regulations
+
+    db_path = init_db(tmp_path / "watch.db")
+    client = FakeRegulationsClient([_reg_doc("FDA-2026-N-0001-0001", doc_type="Proposed Rule", open_for_comment=True)])
+    result = scan_regulations(db_path, config_dir=CONFIG_DIR, client=client, queries=["BPC-157"])
+
+    assert result.stored == 1
+    with sqlite3.connect(db_path) as connection:
+        event = connection.execute("SELECT event_type, severity FROM events").fetchone()
+    assert event == ("regulatory_rule_open_for_comment", "critical")
+
+
+def test_regulations_public_comment_is_medium(tmp_path) -> None:
+    from peptide_watch.sources.regulations import scan_regulations
+
+    db_path = init_db(tmp_path / "watch.db")
+    client = FakeRegulationsClient([_reg_doc("FDA-2025-N-6895-0488", doc_type="Public Submission", open_for_comment=False)])
+    result = scan_regulations(db_path, config_dir=CONFIG_DIR, client=client, queries=["BPC-157"])
+
+    assert result.stored == 1
+    with sqlite3.connect(db_path) as connection:
+        event = connection.execute("SELECT event_type, severity FROM events").fetchone()
+    assert event == ("regulatory_public_comment", "medium")

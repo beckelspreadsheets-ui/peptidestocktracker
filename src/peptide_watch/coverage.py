@@ -20,6 +20,7 @@ API_FAMILIES = {
     "sec_fulltext": "sec_fulltext",
     "openfda_enforcement": "openfda_enforcement",
     "nih_reporter": "nih_reporter",
+    "regulations_gov": "regulations_gov",
 }
 
 

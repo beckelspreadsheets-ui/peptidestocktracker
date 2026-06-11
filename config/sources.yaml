@@ -54,6 +54,11 @@ sources:
     url: https://api.reporter.nih.gov/v2/projects/search
     tier: A
     cadence: weekly
+  regulations_gov:
+    type: api
+    url: https://api.regulations.gov/v4/documents
+    tier: A
+    cadence: daily
   gnw_bpc157:
     type: rss
     url: https://www.globenewswire.com/RssFeed/keyword/BPC-157
