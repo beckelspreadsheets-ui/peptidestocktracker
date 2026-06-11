@@ -1,6 +1,6 @@
 # Peptide Watch — Engineering Hardening Roadmap
 
-**Status:** Draft v2 — PR1 reconciled against code and implemented
+**Status:** Draft v3 — PR1 and PR2 reconciled against code and implemented
 **Last updated:** 2026-06-11
 **Scope:** Reliability, correctness, and maintainability of the `peptide-watch` data pipeline
 **Out of scope:** Domain/watchlist content, research methodology
@@ -421,10 +421,38 @@ Each PR is independently shippable and reviewable. Bold = recommended first slic
 - `uv.lock` committed; new `.github/workflows/ci.yml` runs `uv sync --locked`, ruff, pytest,
   and `config check` (the pre-existing `daily-monitor.yml` placeholder is untouched).
 
+**PR2 (2026-06-11).** Findings and adaptations:
+
+- **Task granularity is the five scanner families** (`clinicaltrials`, `fda`,
+  `federal_register`, `company_pages`, `sec_edgar`), not the 23 `sources.yaml` entries — the
+  existing `scan_*` functions are the smallest independently failable units today. Per-entry
+  granularity arrives naturally with the P1 adapter protocol.
+- Migrations runner: `src/peptide_watch/migrations.py`, numbered files in
+  `schema/migrations/`, tracked via `PRAGMA user_version`, each applied in one transaction
+  with rollback on failure. `init_db` runs the legacy in-code column migrations first
+  (pre-existing behavior, kept), then `apply_migrations()` — so fresh and legacy DBs converge.
+  `0001_run_ledger.sql` creates `runs`, `run_tasks` (with an added `counts_json` column for
+  the summary rollup), and `source_cursors` (unused until P1 conditional GETs).
+- Orchestrator: `runtime/scan.py` `run_scan()` — flock lockfile (`peptide_watch.lock` next to
+  the DB), per-task try/except (only KeyboardInterrupt/SystemExit abort, marking the run
+  `interrupted`), stale `running` runs marked `interrupted` at startup, auto-resume of the
+  latest interrupted run by default (`--no-resume` to override) re-executing only
+  pending/error tasks with `attempt + 1`.
+- Circuit breaker: computed from `run_tasks` history (no extra state table) — after 3
+  consecutive errors a source is skipped with an exponential cool-down (1, 2, 4, … capped 16
+  runs), counted via leading `skipped` rows; a `done` resets the streak.
+- JSON logging via stdlib (`JsonLogFormatter`), `run_id`/`source_id` bound through `extra`.
+  Run summary rolled up from `run_tasks` into `runs.summary_json`, printed as the CLI
+  epilogue (`format_summary`, reusable as digest header).
+- **Deferred to PR3/4:** single-transaction-per-source atomicity. The existing scanners open
+  their own connections and commit per record internally; wrapping them is the adapter
+  migration's job. Ledger state itself is transactional, and resume-without-duplicates holds
+  because completed tasks are never re-executed and the stores are hash-deduped upserts.
+
 ## Progress checklist
 
 - [x] PR1 — config validation, pinning, SQLite hygiene
-- [ ] PR2 — run ledger, failure isolation, logging, summary, migrations runner
+- [x] PR2 — run ledger, failure isolation, logging, summary, migrations runner
 - [ ] PR3 — adapter protocol + shared HTTP client (one adapter migrated)
 - [ ] PR4 — remaining adapters migrated; conditional GET + cursors live
 - [ ] PR5 — change-detection rework (two-hash, event identity, hysteresis)

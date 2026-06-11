@@ -13,7 +13,15 @@ from peptide_watch.claims import (
 )
 from peptide_watch.config import load_config
 from peptide_watch.database import backup_db as backup_database
+from peptide_watch.database import connect
 from peptide_watch.database import init_db as initialize_database
+from peptide_watch.runtime import ledger
+from peptide_watch.runtime.scan import (
+    ScanLocked,
+    configure_json_logging,
+    format_summary,
+    run_scan,
+)
 from peptide_watch.sources.company_pages import (
     CompanyPageClient,
     export_company_page_documents_markdown,
@@ -63,7 +71,9 @@ company_pages_app = typer.Typer(
     no_args_is_help=True,
 )
 sec_app = typer.Typer(help="Scan and inspect public SEC EDGAR filings.", no_args_is_help=True)
+runs_app = typer.Typer(help="Inspect tracked scan runs.", no_args_is_help=True)
 app.add_typer(config_app, name="config")
+app.add_typer(runs_app, name="runs")
 app.add_typer(claims_app, name="claims")
 app.add_typer(clinicaltrials_app, name="clinicaltrials")
 app.add_typer(fda_app, name="fda")
@@ -89,6 +99,95 @@ def init_db(
 
     initialized_path = initialize_database(db)
     typer.echo(f"Initialized SQLite database at {initialized_path}")
+
+
+@app.command("scan")
+def scan(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
+    resume: bool = typer.Option(
+        True,
+        "--resume/--no-resume",
+        help="Resume the latest interrupted run instead of starting a new one.",
+    ),
+    source: list[str] | None = typer.Option(
+        None,
+        "--source",
+        help="Limit a new run to specific source families. Can be repeated.",
+    ),
+) -> None:
+    """Run one tracked scan over all source families with failure isolation."""
+
+    initialize_database(db)
+    configure_json_logging()
+    try:
+        summary = run_scan(
+            db,
+            config_dir=config_dir,
+            source_ids=source,
+            resume=resume,
+        )
+    except ScanLocked as exc:
+        typer.echo(f"Scan not started: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except ValueError as exc:
+        typer.echo(f"Scan not started: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(format_summary(summary))
+    if summary.get("status") == "failed":
+        raise typer.Exit(code=1)
+
+
+@runs_app.command("list")
+def runs_list(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    limit: int = typer.Option(20, "--limit", min=1, help="Maximum runs to list."),
+) -> None:
+    """List tracked scan runs, newest first."""
+
+    connection = connect(db)
+    try:
+        records = ledger.list_runs(connection, limit=limit)
+    finally:
+        connection.close()
+    typer.echo("| run_id | status | started_at | finished_at | sources | errors |")
+    typer.echo("| --- | --- | --- | --- | --- | --- |")
+    for record in records:
+        summary = record["summary"] or {}
+        typer.echo(
+            f"| {record['run_id']} | {record['status']} | {record['started_at']} "
+            f"| {record['finished_at'] or ''} | {summary.get('sources', '')} "
+            f"| {len(summary.get('errors', {}))} |"
+        )
+
+
+@runs_app.command("show")
+def runs_show(
+    run_id: str = typer.Argument(..., help="Run id to inspect."),
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+) -> None:
+    """Show one run with its per-source task states."""
+
+    connection = connect(db)
+    try:
+        record = ledger.get_run(connection, run_id)
+    finally:
+        connection.close()
+    if record is None:
+        typer.echo(f"Run not found: {run_id}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"Run {record['run_id']}: {record['status']}")
+    typer.echo(f"  started:  {record['started_at']}")
+    typer.echo(f"  finished: {record['finished_at'] or '-'}")
+    for task in record["tasks"]:
+        counts = task["counts"] or {}
+        details = ", ".join(f"{value} {key}" for key, value in counts.items()) or "-"
+        typer.echo(
+            f"  {task['source_id']}: {task['status']} (attempt {task['attempt']}) {details}"
+        )
+        if task["error"]:
+            last_line = task["error"].strip().splitlines()[-1]
+            typer.echo(f"    error: {last_line}")
 
 
 @app.command("backup-db")

@@ -6,6 +6,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from peptide_watch.migrations import apply_migrations
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SCHEMA_PATH = PROJECT_ROOT / "schema" / "schema.sql"
 
@@ -172,6 +174,7 @@ def init_db(db_path: str | Path, schema_path: str | Path = DEFAULT_SCHEMA_PATH) 
         _migrate_regulatory_documents_table(connection)
         _migrate_company_documents_table(connection)
         connection.commit()
+        apply_migrations(connection)
 
     return target
 
