@@ -30,6 +30,22 @@ Optional environment variables (secrets live here, never in config — enforced 
 Concurrency is safe: a lockfile blocks overlapping scans, and a crashed or killed run is
 marked interrupted and auto-resumed by the next invocation.
 
+## Live VPS baseline
+
+Run the Phase 0 verifier after deploys or before starting a new HQ phase:
+
+```bash
+scripts/peptide_watch_baseline.sh
+```
+
+It checks the current git commit, config validation, latest tracker status, the local
+API/cockpit, scanner crontab, and the OpenClaw briefing-agent cron. It intentionally
+prints source-health caveats for the two accepted upstream failures without printing
+environment variables or secrets:
+
+- FDA direct pages: expected 403 from the VPS datacenter IP unless proxy work is chosen.
+- USPTO patents: expected 403 with the current key/API state.
+
 ## Scheduling on a VPS (recommended) — cron
 
 Twice daily around the US market (pre-open and post-close), weekly hygiene on Sundays.
