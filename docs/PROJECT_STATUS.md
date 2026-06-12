@@ -137,7 +137,31 @@ uv run peptide-watch list-adapters       # registered scanner families
 uv run peptide-watch uspto-check         # verify USPTO key + print response shape
 uv run peptide-watch status              # health check: latest run, errors, storage
 uv run peptide-watch prune               # drop delivered events/source rows >180d
+uv run peptide-watch briefing            # ranked factual briefing (--format json for the contract)
+uv run peptide-watch check-language --stdin   # runtime compliance gate (agent pipes drafts here)
+uv run peptide-watch serve               # read-only dashboard API (needs: uv sync --extra web)
 ```
+
+## Dashboard, briefing & learning agent (M1–M4, branch merged to master)
+
+A deterministic, compliant **briefing layer** (`relevance.py`) ranks events by signal strength
+(severity + novelty + watchlist proximity + recency, explainable) and is the single data
+contract for three consumers:
+
+- **CLI:** `peptide-watch briefing --json|--format markdown`.
+- **Read-only API:** `peptide-watch serve` (FastAPI, `[web]` extra, localhost-bound;
+  `connect_readonly` so it can never write the DB the cron scanner owns). Endpoints under
+  `/api/*` (briefing, events+filters, watchlist, discoveries, source-health, job-runs).
+- **Dashboard:** `dashboard/` — Vite+React+TS+Tailwind cockpit (dark instrument UI; ⌘K command
+  palette, detail drawers, keyboard triage, deadline countdowns, new-since-last-visit). Run:
+  `cd dashboard && npm install && npm run dev` (port 3000), API on 8000. See `dashboard/README.md`.
+- **Learning agent:** `docs/AGENT_BRIEFING_HANDOFF.md` — paste-ready spec for a dedicated
+  openclaw agent that narrates the briefing to Telegram and accumulates memory. Compliance
+  linchpin: a fail-closed `check-language --stdin` gate the LLM can't bypass.
+
+Compliance: ranking is deterministic (gated by `tools/check_language.py`, which now also scans
+`relevance.py`); the dashboard renders facts + disclaimers only; the agent is the one runtime
+surface and is held to the same regex rule it cannot bypass.
 
 ## Pre-VPS robustness audit (2026-06-12)
 
