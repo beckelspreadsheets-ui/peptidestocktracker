@@ -19,6 +19,23 @@ queries:
     OR "LL-37"'
   - '"BPC 157" OR "TB-500" OR "thymosin beta-4" OR "pentadecapeptide" OR "Epitalon"
     OR "copper tripeptide-1"'
+  # Precision-tuned phrases for EDGAR full-text DISCOVERY (one company per
+  # hit). Short alphanumeric codes (LL-37, TB-500, CB4211) match incidental
+  # strings in unrelated filings — verified live: "LL-37" returned Hanesbrands,
+  # Southwest, Endeavour Silver. Use specific/clinical names instead; the
+  # noisy codes are covered by their descriptive parents (e.g. TB-500 ->
+  # "thymosin beta-4", LL-37 -> "ropocamptide").
+  sec_fulltext:
+  - '"BPC-157"'
+  - '"pentadecapeptide BPC"'
+  - '"RGN-259"'
+  - '"thymosin beta-4"'
+  - '"timbetasin"'
+  - '"GHK-Cu"'
+  - '"copper tripeptide-1"'
+  - '"prezatide copper acetate"'
+  - '"MOTS-c"'
+  - '"ropocamptide"'
   hims_lifemd:
   - '"Hims" OR "Hims & Hers" peptide facility peptide compounding'
   - HIMS "peptides" "compounding"

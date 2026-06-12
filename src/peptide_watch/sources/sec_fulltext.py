@@ -75,11 +75,18 @@ class SecFullTextClient:
 
 
 def default_search_phrases(config: WatchConfig) -> list[str]:
-    """Individual quoted phrases pulled from the sec_keywords query group."""
+    """Precision-tuned discovery phrases.
+
+    Prefers the dedicated ``sec_fulltext`` query group (curated for one-company-
+    per-hit precision); falls back to ``sec_keywords`` then primary aliases.
+    """
 
     phrases: list[str] = []
-    for query in config.queries.get("sec_keywords", []):
-        phrases.extend(QUOTED_TERM_RE.findall(query))
+    for query in config.queries.get("sec_fulltext", []):
+        phrases.extend(QUOTED_TERM_RE.findall(query) or [query])
+    if not phrases:
+        for query in config.queries.get("sec_keywords", []):
+            phrases.extend(QUOTED_TERM_RE.findall(query))
     if not phrases:
         for peptide in config.primary_peptides:
             phrases.extend(peptide.aliases[:2])
