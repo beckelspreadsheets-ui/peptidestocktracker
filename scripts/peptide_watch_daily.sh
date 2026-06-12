@@ -11,6 +11,10 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 mkdir -p logs
 
+# Load API keys / webhook URL from a gitignored secrets file if present
+# (cron has no interactive shell env). Format: KEY=value lines.
+[ -f "$REPO/.env" ] && set -a && . "$REPO/.env" && set +a
+
 CHANNEL="${PEPTIDE_WATCH_CHANNEL:-file}"
 STAMP="$(date -u +%Y%m%dT%H%M%S)"
 LOG="logs/scan-$STAMP.log"

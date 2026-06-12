@@ -8,6 +8,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 mkdir -p logs
 
+[ -f "$REPO/.env" ] && set -a && . "$REPO/.env" && set +a
+
 STAMP="$(date -u +%Y%m%dT%H%M%S)"
 LOG="logs/weekly-$STAMP.log"
 
