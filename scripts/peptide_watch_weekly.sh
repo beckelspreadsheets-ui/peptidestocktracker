@@ -2,6 +2,8 @@
 # Weekly hygiene: integrity verification + dated database backup.
 set -uo pipefail
 
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 mkdir -p logs

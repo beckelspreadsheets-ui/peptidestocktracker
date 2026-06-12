@@ -4,6 +4,9 @@
 # scan lockfile and interrupted runs auto-resume on the next invocation.
 set -uo pipefail
 
+# launchd/cron give a minimal PATH; make sure uv (Homebrew/local) is found.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 mkdir -p logs
