@@ -129,6 +129,17 @@ for the watchlist.
 
 By default alerts are written to `alerts_outbox/alerts-YYYYMMDD.md`. For push alerts:
 
+**Telegram (recommended if a TG bot is already in use):** message @BotFather, `/newbot`,
+copy the token. Get your chat id: message the new bot once, then open
+`https://api.telegram.org/bot<TOKEN>/getUpdates` and read `result[].message.chat.id`. Put in
+`.env`:
+```
+PEPTIDE_WATCH_CHANNEL=telegram
+PEPTIDE_WATCH_TELEGRAM_TOKEN=123456:ABC-DEF...
+PEPTIDE_WATCH_TELEGRAM_CHAT_ID=123456789
+```
+Test: `uv run peptide-watch deliver --channel telegram`.
+
 **Discord:** Server → a channel → Edit Channel → Integrations → Webhooks → New Webhook →
 Copy URL. Put in `.env`:
 ```

@@ -196,3 +196,74 @@ def test_webhook_failure_does_not_leak_token(monkeypatch) -> None:
         channel.send("alert")
     assert "SECRETTOKEN" not in str(excinfo.value)
     assert "500" in str(excinfo.value)
+
+
+def test_telegram_channel_posts_chat_id_and_text(monkeypatch) -> None:
+    import httpx
+
+    from peptide_watch.alerts.channels import TelegramChannel
+
+    posts = []
+
+    def handler(request):
+        posts.append((str(request.url), request.read()))
+        return httpx.Response(200, json={"ok": True})
+
+    channel = TelegramChannel(
+        token="123:SECRETBOTTOKEN", chat_id="42", transport=httpx.MockTransport(handler)
+    )
+    channel.send("critical: new company peptide disclosure")
+
+    url, body = posts[0]
+    assert url == "https://api.telegram.org/bot123:SECRETBOTTOKEN/sendMessage"
+    assert b'"chat_id"' in body and b'"42"' in body
+    assert b"new company peptide disclosure" in body
+
+
+def test_telegram_failure_does_not_leak_token() -> None:
+    import httpx
+    import pytest
+
+    from peptide_watch.alerts.channels import TelegramChannel
+
+    def handler(request):
+        return httpx.Response(401, json={"ok": False})
+
+    channel = TelegramChannel(
+        token="123:SECRETBOTTOKEN", chat_id="42", transport=httpx.MockTransport(handler)
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        channel.send("x")
+    assert "SECRETBOTTOKEN" not in str(excinfo.value)
+    assert "401" in str(excinfo.value)
+
+
+def test_telegram_truncates_to_limit() -> None:
+    import httpx
+
+    from peptide_watch.alerts.channels import TelegramChannel
+
+    captured = {}
+
+    def handler(request):
+        import json as _j
+        captured["text"] = _j.loads(request.read())["text"]
+        return httpx.Response(200, json={"ok": True})
+
+    channel = TelegramChannel(
+        token="t", chat_id="1", transport=httpx.MockTransport(handler)
+    )
+    channel.send("A" * 9000)
+    assert len(captured["text"]) <= TelegramChannel.MAX_LEN
+    assert captured["text"].endswith("(truncated)")
+
+
+def test_telegram_channel_requires_env(monkeypatch) -> None:
+    import pytest
+
+    from peptide_watch.alerts.channels import TelegramChannel
+
+    monkeypatch.delenv("PEPTIDE_WATCH_TELEGRAM_TOKEN", raising=False)
+    monkeypatch.delenv("PEPTIDE_WATCH_TELEGRAM_CHAT_ID", raising=False)
+    with pytest.raises(ValueError, match="PEPTIDE_WATCH_TELEGRAM"):
+        TelegramChannel()

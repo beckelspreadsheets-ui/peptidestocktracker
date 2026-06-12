@@ -193,7 +193,7 @@ def runs_show(
 @app.command("deliver")
 def deliver(
     db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
-    channel: str = typer.Option("console", "--channel", help="Delivery channel: console or file."),
+    channel: str = typer.Option("console", "--channel", help="Delivery channel: console, file, webhook, or telegram."),
     outbox_dir: Path = typer.Option(
         Path("alerts_outbox"),
         "--outbox-dir",
@@ -226,7 +226,7 @@ def deliver(
 @app.command("digest")
 def digest(
     db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
-    channel: str = typer.Option("console", "--channel", help="Delivery channel: console or file."),
+    channel: str = typer.Option("console", "--channel", help="Delivery channel: console, file, webhook, or telegram."),
     outbox_dir: Path = typer.Option(
         Path("alerts_outbox"),
         "--outbox-dir",

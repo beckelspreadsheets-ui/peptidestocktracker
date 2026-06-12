@@ -92,6 +92,60 @@ class WebhookChannel:
             ) from None
 
 
+class TelegramChannel:
+    """Send messages via the Telegram Bot API (sendMessage).
+
+    Token and chat id come only from the environment:
+    PEPTIDE_WATCH_TELEGRAM_TOKEN and PEPTIDE_WATCH_TELEGRAM_CHAT_ID. The token
+    is part of the API URL, so errors are sanitized to keep it out of stored
+    delivery errors and logs. Messages are truncated to Telegram's limit.
+    """
+
+    name = "telegram"
+    MAX_LEN = 4096
+
+    def __init__(
+        self,
+        *,
+        token: str | None = None,
+        chat_id: str | None = None,
+        timeout: float = 15.0,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self.token = token or os.environ.get("PEPTIDE_WATCH_TELEGRAM_TOKEN", "")
+        self.chat_id = chat_id or os.environ.get("PEPTIDE_WATCH_TELEGRAM_CHAT_ID", "")
+        if not self.token or not self.chat_id:
+            raise ValueError(
+                "telegram channel needs PEPTIDE_WATCH_TELEGRAM_TOKEN and "
+                "PEPTIDE_WATCH_TELEGRAM_CHAT_ID environment variables"
+            )
+        self._timeout = timeout
+        self._transport = transport
+
+    def send(self, message: str) -> None:
+        if len(message) > self.MAX_LEN:
+            message = message[: self.MAX_LEN - 20].rstrip() + "\n…(truncated)"
+        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+        payload = {
+            "chat_id": self.chat_id,
+            "text": message,
+            "disable_web_page_preview": True,
+        }
+        try:
+            with httpx.Client(timeout=self._timeout, transport=self._transport) as client:
+                response = client.post(url, json=payload)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # The bot token is in the URL — never include it in the error.
+            raise RuntimeError(
+                f"telegram delivery failed: HTTP {exc.response.status_code}"
+            ) from None
+        except httpx.HTTPError as exc:
+            raise RuntimeError(
+                f"telegram delivery failed: {type(exc).__name__}"
+            ) from None
+
+
 def get_channel(name: str, *, directory: str | Path | None = None) -> Channel:
     if name == "console":
         return ConsoleChannel()
@@ -99,4 +153,6 @@ def get_channel(name: str, *, directory: str | Path | None = None) -> Channel:
         return FileChannel(directory or "alerts_outbox")
     if name == "webhook":
         return WebhookChannel()
-    raise ValueError(f"unknown channel: {name} (available: console, file, webhook)")
+    if name == "telegram":
+        return TelegramChannel()
+    raise ValueError(f"unknown channel: {name} (available: console, file, webhook, telegram)")
