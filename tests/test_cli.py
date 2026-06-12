@@ -79,3 +79,43 @@ def test_claims_add_command_defaults_to_needs_verification(tmp_path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "needs_verification" in result.output
+
+
+def test_briefing_json_command(tmp_path) -> None:
+    import json
+    db_path = tmp_path / "watch.db"
+    runner = CliRunner()
+    runner.invoke(app, ["init-db", "--db", str(db_path)])
+    result = runner.invoke(
+        app, ["briefing", "--db", str(db_path), "--config-dir", str(ROOT / "config"), "--format", "json"]
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["schema_version"] == "1.0"
+    assert "top_events" in data and "disclaimers" in data
+
+
+def test_briefing_markdown_has_disclaimer(tmp_path) -> None:
+    db_path = tmp_path / "watch.db"
+    runner = CliRunner()
+    runner.invoke(app, ["init-db", "--db", str(db_path)])
+    result = runner.invoke(
+        app, ["briefing", "--db", str(db_path), "--config-dir", str(ROOT / "config")]
+    )
+    assert result.exit_code == 0, result.output
+    assert "not a buy/sell recommendation" in result.output
+
+
+def test_check_language_clean_and_forbidden() -> None:
+    runner = CliRunner()
+    clean = runner.invoke(app, ["check-language", "--text", "A new filer disclosed BPC-157. Source: url."])
+    assert clean.exit_code == 0, clean.output
+    assert "clean" in clean.output
+
+    bad = runner.invoke(app, ["check-language", "--text", "you should buy this now for guaranteed gains"])
+    assert bad.exit_code == 1
+    assert "forbidden" in bad.output
+
+    # the whitelisted disclaimer phrase must NOT trip the gate
+    ok = runner.invoke(app, ["check-language", "--text", "This is not a buy/sell recommendation."])
+    assert ok.exit_code == 0, ok.output

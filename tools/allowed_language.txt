@@ -2,3 +2,4 @@
 # patterns run. Reserved for disclaimers that state the tool gives no
 # recommendations - the one legitimate use of the words.
 not a buy/sell recommendation
+not financial advice

@@ -385,35 +385,12 @@ def discoveries(
     Promote the promising ones into config/companies.yaml.
     """
 
+    from peptide_watch.relevance import discoveries_rows
+
     initialize_database(db)
     connection = connect(db)
     try:
-        rows = connection.execute(
-            """
-            SELECT company_name,
-                   COUNT(*) AS filings,
-                   COUNT(DISTINCT peptide_ids_json) AS peptide_sets,
-                   MAX(filing_date) AS latest,
-                   GROUP_CONCAT(DISTINCT filing_type) AS forms
-            FROM company_documents
-            WHERE json_extract(metadata_json, '$.discovery') = 1
-              AND company_name IS NOT NULL
-              -- exclude fund/passive-holder filings (noise, may predate the
-              -- scanner-side filter)
-              AND COALESCE(filing_type, '') NOT LIKE 'NPORT%'
-              AND COALESCE(filing_type, '') NOT LIKE 'N-CSR%'
-              AND COALESCE(filing_type, '') NOT LIKE 'N-CEN%'
-              AND COALESCE(filing_type, '') NOT LIKE '13F%'
-              AND COALESCE(filing_type, '') NOT LIKE '497%'
-              AND COALESCE(filing_type, '') NOT LIKE 'SC 13%'
-            GROUP BY company_name
-            -- freshest disclosures first: a recent first-time filer is a
-            -- hotter early lead than a long-known name with many old filings
-            ORDER BY latest DESC, filings DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+        rows = discoveries_rows(connection, limit=limit)
     finally:
         connection.close()
     if not rows:
@@ -421,12 +398,111 @@ def discoveries(
         return
     typer.echo("| company | filings | latest | forms |")
     typer.echo("| --- | --- | --- | --- |")
-    for name, filings, _sets, latest, forms in rows:
-        typer.echo(f"| {name} | {filings} | {latest or ''} | {forms or ''} |")
+    for row in rows:
+        typer.echo(
+            f"| {row['company_name']} | {row['filings']} | {row['latest'] or ''} "
+            f"| {row['forms'] or ''} |"
+        )
     typer.echo(
         f"\n{len(rows)} non-watchlist filers disclosed a target peptide. "
         "Review and promote promising names to config/companies.yaml."
     )
+
+
+@app.command("briefing")
+def briefing_command(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
+    output_format: str = typer.Option(
+        "markdown", "--format", help="Output format: markdown or json."
+    ),
+    limit: int = typer.Option(25, "--limit", min=1, help="Maximum ranked events to include."),
+    output: Path | None = typer.Option(None, "--output", help="Optional output file."),
+) -> None:
+    """Ranked factual snapshot of current public-source signals (markdown or JSON).
+
+    The JSON form is the shared data contract for the dashboard API and the
+    alert agent. It orders facts by signal strength; it issues no buy/sell calls.
+    """
+
+    import json as json_module
+
+    from peptide_watch.relevance import briefing, render_briefing_markdown
+
+    if output_format not in {"markdown", "json"}:
+        raise typer.BadParameter("format must be 'markdown' or 'json'")
+    initialize_database(db)
+    config = load_config(config_dir)
+    connection = connect(db)
+    try:
+        data = briefing(connection, config, limit=limit)
+    finally:
+        connection.close()
+    rendered = (
+        json_module.dumps(data, indent=2)
+        if output_format == "json"
+        else render_briefing_markdown(data)
+    )
+    if output is None:
+        typer.echo(rendered)
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered, encoding="utf-8")
+    typer.echo(f"Wrote briefing ({output_format}) to {output}")
+
+
+@app.command("check-language")
+def check_language_command(
+    stdin: bool = typer.Option(False, "--stdin", help="Read text to check from stdin."),
+    text: str | None = typer.Option(None, "--text", help="Text to check instead of stdin."),
+) -> None:
+    """Check text against the forbidden-language patterns (runtime compliance gate).
+
+    The alert agent pipes its drafted briefing through this before sending so a
+    runtime LLM output is held to the same rule as the source-code CI gate.
+    Exits non-zero and prints each forbidden phrase if any are found.
+    """
+
+    import sys
+
+    from peptide_watch.language_gate import check_text
+
+    if text is None:
+        if not stdin:
+            typer.echo("Provide --text or pipe text with --stdin.", err=True)
+            raise typer.Exit(code=2)
+        text = sys.stdin.read()
+    violations = check_text(text)
+    if violations:
+        for phrase in violations:
+            typer.echo(f"forbidden language: {phrase!r}", err=True)
+        typer.echo(f"{len(violations)} forbidden phrase(s) found.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo("clean")
+
+
+@app.command("serve")
+def serve(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host (localhost by default)."),
+    port: int = typer.Option(8000, "--port", help="Bind port."),
+) -> None:
+    """Launch the read-only dashboard API (requires the [web] extra).
+
+    Localhost-bound by default; reach it via an SSH tunnel or a reverse proxy.
+    """
+
+    try:
+        import uvicorn
+
+        from peptide_watch.web.app import create_app
+    except ImportError as exc:
+        typer.echo("Web dependencies missing. Install with: uv sync --extra web", err=True)
+        raise typer.Exit(code=1) from exc
+    initialize_database(db)
+    application = create_app(db_path=db, config_dir=config_dir)
+    uvicorn.run(application, host=host, port=port)
 
 
 @app.command("list-adapters")

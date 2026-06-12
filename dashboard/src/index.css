@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #0a0c0f;
+  /* atmosphere: a faint cool glow at top, a hairline grid for the instrument feel */
+  background-image:
+    radial-gradient(1100px 520px at 78% -8%, rgba(45, 212, 191, 0.06), transparent 60%),
+    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+  background-size: 100% 100%, 34px 34px, 34px 34px;
+  background-attachment: fixed;
+  color: #e7eef5;
+  font-family: "Hanken Grotesk", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv01";
+}
+
+::selection {
+  background: rgba(45, 212, 191, 0.28);
+}
+
+/* thin instrument scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a343e transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #232c35;
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #303b46;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-xl border border-line bg-panel shadow-panel;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  .focusable:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #0a0c0f, 0 0 0 3px rgba(45, 212, 191, 0.7);
+  }
+  .row-divide > * + * {
+    border-top: 1px solid #1a212a;
+  }
+}
