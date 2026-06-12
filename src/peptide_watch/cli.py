@@ -481,6 +481,30 @@ def check_language_command(
     typer.echo("clean")
 
 
+@app.command("serve")
+def serve(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host (localhost by default)."),
+    port: int = typer.Option(8000, "--port", help="Bind port."),
+) -> None:
+    """Launch the read-only dashboard API (requires the [web] extra).
+
+    Localhost-bound by default; reach it via an SSH tunnel or a reverse proxy.
+    """
+
+    try:
+        import uvicorn
+
+        from peptide_watch.web.app import create_app
+    except ImportError as exc:
+        typer.echo("Web dependencies missing. Install with: uv sync --extra web", err=True)
+        raise typer.Exit(code=1) from exc
+    initialize_database(db)
+    application = create_app(db_path=db, config_dir=config_dir)
+    uvicorn.run(application, host=host, port=port)
+
+
 @app.command("list-adapters")
 def list_adapters() -> None:
     """List registered source-family adapters."""

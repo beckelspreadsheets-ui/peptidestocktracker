@@ -130,6 +130,21 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     return connection
 
 
+def connect_readonly(db_path: str | Path) -> sqlite3.Connection:
+    """Open a strictly read-only connection (for the API alongside the writer).
+
+    ``mode=ro`` guarantees the process can never write or migrate the DB; WAL
+    lets it read a consistent snapshot while the cron scanner writes.
+    """
+
+    uri = f"file:{Path(db_path).resolve()}?mode=ro"
+    connection = sqlite3.connect(uri, uri=True)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA query_only = ON")
+    connection.execute("PRAGMA busy_timeout = 5000")
+    return connection
+
+
 def backup_db(db_path: str | Path, backups_dir: str | Path = "backups") -> Path:
     """Write a consistent backup of the database via VACUUM INTO."""
 
