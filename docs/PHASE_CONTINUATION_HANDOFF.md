@@ -16,7 +16,7 @@ Current live repo:
 - Live VPS service: `peptide-watch-api.service`
 - Cockpit: `https://peptide.showcase-designs.com` behind Basic Auth
 - Local API/cockpit: `http://127.0.0.1:8000`
-- Telegram briefing cron: `peptide-watch-briefing-agent`
+- Telegram briefing cron: `peptide-watch-briefing-agent` sends to the `peptide agent` Telegram HQ group through the peptide bot helper, not OpenClaw announcement delivery.
 
 ## Start Every Phase With This Baseline Check
 
@@ -37,6 +37,7 @@ Also check the OpenClaw cron job:
 - Known job id as of 2026-06-12: `d7e17495-7b8d-4893-bbe0-ad7b5caff5f9`
 - Schedule: `45 11,21 * * *` UTC
 - Session target: `session:peptide-watch-briefing-agent`
+- Delivery mode: `none`; the agent sends via `scripts/peptide_watch_send_telegram.py` using `.env`.
 
 Do not proceed if the baseline is broken unless the phase is explicitly to fix the baseline.
 
@@ -129,6 +130,8 @@ Acceptance:
 ### Phase 1 - Telegram HQ Group
 
 Goal: move briefing/control flow into the dedicated `peptidestocktracker` Telegram group.
+
+Status as of 2026-06-12: complete. The group title observed from bot updates is `peptide agent`; `.env` points `PEPTIDE_WATCH_TELEGRAM_CHAT_ID` at that supergroup; the existing peptide bot is used. OpenClaw announcement delivery could not post there because the group has the peptide bot, not the OpenClaw Telegram identity, so the briefing cron now uses `scripts/peptide_watch_send_telegram.py` and `delivery.mode=none`.
 
 Needed input from Seth:
 - Telegram group chat id, or permission to derive it from bot updates.
@@ -229,4 +232,3 @@ Seth can paste:
 ```text
 Continue Peptide Watch HQ Phase <N>. Read docs/HQ_AGENT_ROADMAP.md and docs/PHASE_CONTINUATION_HANDOFF.md, run the baseline checks, implement only this phase, verify acceptance criteria, deploy/restart what changed, commit/push, update memory/work log, and report status + next phase. Do not print secrets or weaken the no-advice/public-sources-only rule.
 ```
-

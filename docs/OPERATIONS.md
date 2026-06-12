@@ -46,6 +46,23 @@ environment variables or secrets:
 - FDA direct pages: expected 403 from the VPS datacenter IP unless proxy work is chosen.
 - USPTO patents: expected 403 with the current key/API state.
 
+## Telegram HQ delivery
+
+The HQ briefing cron sends group briefings through the peptide Telegram bot, not
+OpenClaw's announcement delivery. OpenClaw's Telegram identity may not be a member of
+the HQ group, so the cron agent drafts/checks the briefing and then pipes the final
+message into:
+
+```bash
+uv run python scripts/peptide_watch_send_telegram.py
+```
+
+The helper reads `PEPTIDE_WATCH_TELEGRAM_TOKEN` and
+`PEPTIDE_WATCH_TELEGRAM_CHAT_ID` from `.env`, runs the shared language gate before
+sending, and never prints token or chat-id values. The OpenClaw cron job
+`peptide-watch-briefing-agent` should keep `delivery.mode` set to `none`; its final
+run summary records `SENT run_id=<id> via peptide bot` after the bot send succeeds.
+
 ## Scheduling on a VPS (recommended) — cron
 
 Twice daily around the US market (pre-open and post-close), weekly hygiene on Sundays.
