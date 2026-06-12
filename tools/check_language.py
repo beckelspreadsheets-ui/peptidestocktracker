@@ -26,6 +26,7 @@ DEFAULT_TARGETS = (
     ROOT / "src" / "peptide_watch" / "cli.py",
     ROOT / "src" / "peptide_watch" / "events.py",
     ROOT / "src" / "peptide_watch" / "replay.py",
+    ROOT / "src" / "peptide_watch" / "relevance.py",
 )
 LANG_OK_MARKER = "lang-ok:"
 
