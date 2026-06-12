@@ -667,12 +667,28 @@ Ordered earliest → latest, this is the analytic backbone for "ahead of the cur
 7. **Federal Register / FDA pages & PDFs** — the rule/decision is *published*. *Coincident.*
 8. **openFDA enforcement, company pages, newswires** — it's already happening. *Lagging.*
 
-The tracker now spans all eight rungs. Highest-leverage future adds, by earliness:
-SBIR.gov all-agency awards (DoD/DARPA wound-healing money — endpoint was rate-limited at
-probe time, retry during soak); FDA 503B outsourcing-facility registration list (new
-manufacturing entrants); FDA drug-shortage database (compounding-demand driver); state
-boards of pharmacy (fragmented, lower priority). Also still open: EPO OPS / PatentsView
-(key-gated patents), EU CTR / WHO ICTRP (ex-US trials), per-company newswire feeds.
+The tracker now spans all eight rungs plus two supply/demand signals (below).
+
+**PR15 — supply-and-demand edge signals (2026-06-11):**
+
+- **`openfda_shortages` family** (live-validated): openFDA drug-shortage API for
+  peptide-class drugs. When an approved peptide drug (GLP-1s and the like) goes into
+  shortage, compounders may legally fill the gap — the semaglutide shortage *created* the
+  compounding boom. A **new** shortage → high (compounding demand opening); a **resolved**
+  shortage → low (tailwind fading); else medium. Live: 13 peptide-class shortages incl.
+  semaglutide/liraglutide.
+- **`fda_503b_facilities` page** (config-only, fda family): FDA's registered 503B
+  outsourcing-facility list. A new registrant is a company gearing up to *manufacture* — the
+  most direct "companies start making peptides" signal. Live: page fetches, 20 KB of
+  facility text under content-hash change detection.
+- **SBIR.gov** was probed again and is still returning `TooManyRequestsError` / `Forbidden`
+  from every IP tried — its public API appears broken, not merely throttled. Deferred until
+  it responds; NIH RePORTER covers the most relevant grant signal meanwhile.
+
+Highest-leverage future adds, by earliness: SBIR.gov all-agency awards (retry when the API
+recovers — DoD/DARPA wound-healing money); EPO OPS / PatentsView (key-gated patents); EU
+CTR / WHO ICTRP (ex-US trials); per-company newswire feeds; state boards of pharmacy
+(fragmented). The signal ladder above is the framework — prefer adds on the top rungs.
 
 ---
 

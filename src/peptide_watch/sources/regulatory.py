@@ -555,6 +555,8 @@ def _regulations_event_type(document: RegulatoryDocument) -> str:
 
 
 def _new_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("openfda_shortage"):
+        return "drug_shortage"
     if document.source_id.startswith("regulations"):
         return _regulations_event_type(document)
     if document.source_id.startswith("nih_reporter"):
@@ -577,6 +579,8 @@ def _new_event_type(document: RegulatoryDocument) -> str:
 
 
 def _changed_event_type(document: RegulatoryDocument) -> str:
+    if document.source_id.startswith("openfda_shortage"):
+        return "drug_shortage_update"
     if document.source_id.startswith("regulations"):
         return _regulations_event_type(document)
     if document.source_id.startswith("nih_reporter"):
@@ -615,6 +619,14 @@ def _severity_for_document(document: RegulatoryDocument, *, changed: bool) -> st
         if document.metadata.get("assigned_company_id"):
             return "high"  # assigned to a private watchlist company
         return "medium"  # peptide patent with no watchlist owner: context
+    if source_id.startswith("openfda_shortage"):
+        status = str(document.metadata.get("status") or "").lower()
+        update_type = str(document.metadata.get("update_type") or "").lower()
+        if "resolv" in status:
+            return "low"  # shortage cleared: compounding-demand tailwind fading
+        if update_type == "new":
+            return "high"  # a new peptide-drug shortage opens compounding demand
+        return "medium"
     if source_id.startswith("openfda") and document.peptide_ids:
         return "high"
     if source_id.startswith("nih_reporter"):

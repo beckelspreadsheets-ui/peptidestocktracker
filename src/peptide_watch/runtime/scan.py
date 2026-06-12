@@ -125,6 +125,14 @@ def _scan_openfda(db_path: Path, config_dir: Path, run_id: str) -> Any:
     return scan_openfda_enforcement(db_path, config_dir=config_dir, run_id=run_id)
 
 
+@register_scanner("openfda_shortages")
+def _scan_openfda_shortages(db_path: Path, config_dir: Path, run_id: str) -> Any:
+    """openFDA peptide-class drug shortages — a compounding-demand signal."""
+    from peptide_watch.sources.openfda_shortages import scan_openfda_shortages
+
+    return scan_openfda_shortages(db_path, config_dir=config_dir, run_id=run_id)
+
+
 @register_scanner("watched_pages")
 def _scan_watched_pages(db_path: Path, config_dir: Path, run_id: str) -> Any:
     """Catch-all change watch for page/RSS sources no other family claims."""

@@ -416,7 +416,9 @@ def config_check(
 
     from peptide_watch.coverage import UNCLAIMED, source_coverage
     from peptide_watch.sources.openfda import OpenFdaClient
+    from peptide_watch.sources.openfda_shortages import OpenFdaShortageClient
     from peptide_watch.sources.pubmed import PubMedClient
+    from peptide_watch.sources.regulations import RegulationsClient
     from peptide_watch.sources.sec_fulltext import SecFullTextClient
 
     try:
@@ -434,6 +436,8 @@ def config_check(
         "sec_fulltext": SecFullTextClient,
         "pubmed": PubMedClient,
         "openfda_enforcement": OpenFdaClient,
+        "openfda_shortages": OpenFdaShortageClient,
+        "regulations_gov": RegulationsClient,
     }
     failures: list[str] = []
     for name, client_class in clients.items():

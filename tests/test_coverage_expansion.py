@@ -474,3 +474,62 @@ def test_regulations_public_comment_is_medium(tmp_path) -> None:
     with sqlite3.connect(db_path) as connection:
         event = connection.execute("SELECT event_type, severity FROM events").fetchone()
     assert event == ("regulatory_public_comment", "medium")
+
+
+class FakeShortageClient:
+    def __init__(self, records):
+        self.records = records
+
+    def search(self, term, *, limit=50):
+        return self.records
+
+
+def _shortage(generic, *, status, update_type, ndc="0480-7250-46"):
+    return {
+        "generic_name": generic,
+        "package_ndc": ndc,
+        "status": status,
+        "update_type": update_type,
+        "company_name": "Teva Pharmaceuticals, Inc.",
+        "dosage_form": "Injection",
+        "initial_posting_date": "05/14/2026",
+        "openfda": {"pharm_class_cs": ["Glucagon-Like Peptide 1 [CS]"], "substance_name": ["LIRAGLUTIDE"]},
+    }
+
+
+def test_new_peptide_drug_shortage_is_high(tmp_path) -> None:
+    from peptide_watch.sources.openfda_shortages import scan_openfda_shortages
+
+    db_path = init_db(tmp_path / "watch.db")
+    client = FakeShortageClient([_shortage("Liraglutide Injection", status="Current", update_type="New")])
+    result = scan_openfda_shortages(db_path, config_dir=CONFIG_DIR, client=client, terms=['"peptide"'])
+
+    assert result.stored == 1
+    with sqlite3.connect(db_path) as connection:
+        document = connection.execute(
+            "SELECT document_key, source_type FROM regulatory_documents"
+        ).fetchone()
+        event = connection.execute("SELECT event_type, severity FROM events").fetchone()
+    assert document[0] == "openfda_shortage:0480-7250-46"
+    assert document[1] == "drug_shortage"
+    assert event == ("drug_shortage", "high")
+
+
+def test_resolved_shortage_is_low(tmp_path) -> None:
+    from peptide_watch.sources.openfda_shortages import scan_openfda_shortages
+
+    db_path = init_db(tmp_path / "watch.db")
+    client = FakeShortageClient([_shortage("Liraglutide Injection", status="Resolved", update_type="Updated")])
+    result = scan_openfda_shortages(db_path, config_dir=CONFIG_DIR, client=client, terms=['"peptide"'])
+
+    assert result.stored == 1
+    with sqlite3.connect(db_path) as connection:
+        event = connection.execute("SELECT event_type, severity FROM events").fetchone()
+    assert event == ("drug_shortage", "low")
+
+
+def test_503b_facilities_page_claimed_by_fda_family() -> None:
+    config = load_config(CONFIG_DIR)
+    coverage = source_coverage(config)
+    assert coverage["fda_503b_facilities"] == "fda"
+    assert coverage["openfda_shortages"] == "openfda_shortages"
