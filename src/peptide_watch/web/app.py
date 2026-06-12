@@ -103,6 +103,7 @@ def create_app(
     @app.get("/api/events")
     def events(
         db=Depends(get_db),
+        q: str | None = None,
         peptide: str | None = None,
         severity: str | None = None,
         confidence: str | None = None,
@@ -115,6 +116,7 @@ def create_app(
         offset: int = Query(0, ge=0),
     ) -> dict[str, Any]:
         filters = {
+            "q": q,
             "peptide": peptide,
             "severity": severity,
             "confidence": confidence,

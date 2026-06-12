@@ -59,7 +59,7 @@ export function Watchlist() {
               {rows.map((c) => (
                 <tr
                   key={c.id}
-                  onClick={() => navigate(`/events?company=${c.id}`)}
+                  onClick={() => navigate(`/events?q=${encodeURIComponent(c.name)}`)}
                   className="cursor-pointer transition hover:bg-panel-2"
                 >
                   <td className="px-3 py-2.5 text-ink">{c.name}</td>

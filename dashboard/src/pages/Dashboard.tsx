@@ -1,5 +1,5 @@
 import { ChevronRight, ExternalLink, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { cleanCompanyName, relativeTime, titleCase } from "../lib/format";
 import type { Briefing, EventItem } from "../lib/types";
@@ -20,7 +20,9 @@ import {
 export function Dashboard({ onLive }: { onLive: (b: Briefing, live: boolean) => void }) {
   const { data, live, loading } = useFetch<Briefing>(() => api.briefing(25), []);
   const { isNew } = useSeen();
-  if (data) onLive(data, live);
+  useEffect(() => {
+    if (data) onLive(data, live);
+  }, [data, live, onLive]);
   if (loading || !data) return <LoadingState />;
 
   const c = data.counts;

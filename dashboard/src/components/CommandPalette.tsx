@@ -70,7 +70,7 @@ export function CommandPalette({
                   key={c.id}
                   icon={Building2}
                   value={`${c.name} ${c.ticker || ""} ${c.id}`}
-                  onSelect={() => go(`/events?company=${c.id}`)}
+                  onSelect={() => go(`/events?q=${encodeURIComponent(c.name)}`)}
                 >
                   <span className="flex-1">{cleanCompanyName(c.name)}</span>
                   {c.ticker && (

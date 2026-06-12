@@ -22,8 +22,18 @@ unreachable the UI renders sample data and shows a "SAMPLE" badge instead of "LI
 On a VPS, reach both over an SSH tunnel:
 `ssh -L 3000:localhost:3000 -L 8000:localhost:8000 vps`, then open `localhost:3000`.
 
-Production build: `npm run build` → static `dist/` (serve behind any static host / reverse
-proxy on the same machine as the API).
+Production build: `npm run build` → static `dist/`. `npm run preview` serves it with SPA
+fallback (deep links like `/events` work). If you instead serve `dist/` behind nginx, add an
+SPA fallback so client routes don't 404 on a hard refresh:
+
+```nginx
+location / {
+  try_files $uri $uri/ /index.html;   # SPA fallback
+}
+location /api/ {
+  proxy_pass http://127.0.0.1:8000;   # the read-only peptide-watch API
+}
+```
 
 ## Navigation
 

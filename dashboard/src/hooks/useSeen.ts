@@ -5,16 +5,16 @@ const KEY = "pw.lastSeen";
 
 /** "New since last visit": a persisted last-seen timestamp + a marker test. */
 export function useSeen() {
-  const [lastSeen, setLastSeen] = useState<number>(() => {
-    const v = localStorage.getItem(KEY);
-    return v ? Number(v) : 0;
-  });
-  // a pending value captured at mount so newly-marked items stay highlighted
-  // until the user explicitly clears them
+  // On first ever visit, seed the baseline to "now" so the feed isn't a sea of
+  // "new" badges; thereafter "new" means added since the last "mark all seen".
   const [pending] = useState<number>(() => {
     const v = localStorage.getItem(KEY);
-    return v ? Number(v) : 0;
+    if (v) return Number(v);
+    const ts = Date.now();
+    localStorage.setItem(KEY, String(ts));
+    return ts;
   });
+  const [lastSeen, setLastSeen] = useState<number>(pending);
 
   const isNew = useCallback(
     (createdAt: string | null | undefined) => {

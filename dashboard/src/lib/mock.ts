@@ -187,6 +187,10 @@ export const mockBriefing: Briefing = {
 
 export function mockEvents(params: Record<string, string | number | undefined>): EventsPage {
   let items = [...TOP, ...moreEvents()];
+  if (params.q) {
+    const needle = String(params.q).toLowerCase();
+    items = items.filter((e) => e.title.toLowerCase().includes(needle));
+  }
   if (params.severity) items = items.filter((e) => e.severity === params.severity);
   if (params.peptide) items = items.filter((e) => e.peptide_id === params.peptide);
   if (params.source_type) items = items.filter((e) => e.source_id === params.source_type);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
@@ -22,10 +22,15 @@ export default function App() {
     new Set((watchlist || []).flatMap((c) => c.peptides)),
   ).slice(0, 12);
 
-  const onLive = (b: Briefing, live: boolean) =>
-    setMeta((m) =>
-      m.generatedAt === b.generated_at && m.live === live ? m : { generatedAt: b.generated_at, live },
-    );
+  const onLive = useCallback(
+    (b: Briefing, live: boolean) =>
+      setMeta((m) =>
+        m.generatedAt === b.generated_at && m.live === live
+          ? m
+          : { generatedAt: b.generated_at, live },
+      ),
+    [],
+  );
 
   return (
     <EventDrawerProvider>

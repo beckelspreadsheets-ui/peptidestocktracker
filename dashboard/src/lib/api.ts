@@ -18,11 +18,11 @@ export const api = {
   briefing: (limit = 25) =>
     get<Briefing>(`/api/briefing?limit=${limit}`, mockBriefing),
   events: (params: Record<string, string | number | undefined>) => {
-    const q = new URLSearchParams();
+    const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== "") q.set(k, String(v));
+      if (v !== undefined && v !== "") qs.set(k, String(v));
     });
-    return get<EventsPage>(`/api/events?${q.toString()}`, mockEvents(params));
+    return get<EventsPage>(`/api/events?${qs.toString()}`, mockEvents(params));
   },
   event: (id: number) =>
     get<{ event: EventItem }>(`/api/events/${id}`, {

@@ -36,6 +36,11 @@ def _event_where(filters: dict[str, Any]) -> tuple[str, list[Any]]:
         if value is not None:
             clauses.append(sql)
             params.append(value)
+    # free-text / company search over the event title (company event filtering
+    # is approximated by title match, since events carry no company FK)
+    if filters.get("q"):
+        clauses.append("e.title LIKE ?")
+        params.append(f"%{filters['q']}%")
     if filters.get("date_from"):
         clauses.append("e.created_at >= ?")
         params.append(filters["date_from"])
@@ -57,6 +62,7 @@ def list_events(
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
+    connection.row_factory = sqlite3.Row  # defensive: callers must get dict rows
     filters = filters or {}
     where, params = _event_where(filters)
     total = connection.execute(
@@ -75,6 +81,7 @@ def list_events(
 
 
 def get_event(connection: sqlite3.Connection, event_id: int) -> dict[str, Any] | None:
+    connection.row_factory = sqlite3.Row
     row = connection.execute(
         f"{EVENT_SELECT} WHERE e.id = ?", (event_id,)
     ).fetchone()
@@ -84,6 +91,7 @@ def get_event(connection: sqlite3.Connection, event_id: int) -> dict[str, Any] |
 def source_health(connection: sqlite3.Connection) -> list[dict[str, Any]]:
     """Latest task status + last error per source, newest run first."""
 
+    connection.row_factory = sqlite3.Row
     rows = connection.execute(
         """
         SELECT rt.source_id, rt.status, rt.attempt, rt.error, rt.finished_at, rt.counts_json

@@ -104,6 +104,15 @@ def test_events_filter_by_severity(client):
     assert body["items"][0]["event_type"] == "new_company_peptide_disclosure"
 
 
+def test_events_filter_by_title_search(client):
+    c, _ = client
+    # the q filter approximates company/title search (events carry no company FK)
+    body = c.get("/api/events?q=BPC-157").json()
+    assert body["total"] == 1
+    assert "BPC-157" in body["items"][0]["title"]
+    assert c.get("/api/events?q=nonexistentco").json()["total"] == 0
+
+
 def test_event_detail_and_404(client):
     c, _ = client
     first = c.get("/api/events").json()["items"][0]["id"]

@@ -14,14 +14,15 @@ const SEVERITIES = ["", "critical", "high", "medium", "low"];
 
 export function Events() {
   const [params, setParams] = useSearchParams();
+  const q = params.get("q") || params.get("company") || "";
   const severity = params.get("severity") || "";
   const peptide = params.get("peptide") || "";
   const source_type = params.get("source_type") || "";
   const review = params.get("review_status") || "";
 
   const { data, live } = useFetch<EventsPage>(
-    () => api.events({ severity, peptide, source_type, review_status: review, limit: 100 }),
-    [severity, peptide, source_type, review],
+    () => api.events({ q, severity, peptide, source_type, review_status: review, limit: 100 }),
+    [q, severity, peptide, source_type, review],
   );
   const { isNew, markAllSeen } = useSeen();
   const { openEvent } = useEventDrawer();
@@ -61,14 +62,23 @@ export function Events() {
   return (
     <div className="animate-fade-up space-y-4">
       <div className="flex flex-wrap items-center gap-2">
+        <input
+          key={`q-${q}`}
+          placeholder="search title / company…"
+          defaultValue={q}
+          onKeyDown={(e) => e.key === "Enter" && setFilter("q", (e.target as HTMLInputElement).value)}
+          className="focusable w-56 rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-3"
+        />
         <Select label="Severity" value={severity} onChange={(v) => setFilter("severity", v)} options={SEVERITIES} />
         <input
+          key={`pep-${peptide}`}
           placeholder="peptide id…"
           defaultValue={peptide}
           onKeyDown={(e) => e.key === "Enter" && setFilter("peptide", (e.target as HTMLInputElement).value)}
           className="focusable rounded-md border border-line bg-panel px-2.5 py-1.5 font-mono text-xs text-ink placeholder:text-ink-3"
         />
         <input
+          key={`src-${source_type}`}
           placeholder="source id…"
           defaultValue={source_type}
           onKeyDown={(e) => e.key === "Enter" && setFilter("source_type", (e.target as HTMLInputElement).value)}
