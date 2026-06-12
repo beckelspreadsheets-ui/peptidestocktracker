@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from peptide_watch.config import load_config
 from peptide_watch.database import connect_readonly
@@ -27,9 +28,11 @@ def create_app(
     db_path: str | Path = "data/watch.db",
     config_dir: str | Path = "config",
     cors_origins: list[str] | None = None,
+    dashboard_dist: str | Path | None = None,
 ) -> FastAPI:
     db_path = Path(db_path)
     config = load_config(config_dir)  # fail fast if config is broken
+    dist = Path(dashboard_dist).resolve() if dashboard_dist else None
 
     app = FastAPI(title="peptide-watch", version="1.0", docs_url="/api/docs")
     # Private localhost tool: allow any localhost/127.0.0.1 port (dev server,
@@ -165,5 +168,17 @@ def create_app(
                 raise HTTPException(status_code=404, detail="run not found")
             return run
         return ledger.list_runs(db, limit=limit)
+
+    # ----- optional: serve the built dashboard on the same origin ---------- #
+    # Registered LAST so it never shadows /api/*. Serves the static file if it
+    # exists, else index.html (SPA fallback for client routes like /events).
+    if dist and (dist / "index.html").exists():
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        def spa(full_path: str) -> FileResponse:
+            candidate = (dist / full_path).resolve()
+            if full_path and dist in candidate.parents and candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(dist / "index.html")
 
     return app

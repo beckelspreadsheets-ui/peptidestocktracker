@@ -1,10 +1,27 @@
 # VPS Deployment Runbook (for an autonomous agent)
 
-You are setting up `peptide-watch` to run unattended on a Linux VPS. It is a Python CLI
-that scans public APIs on a schedule and writes alerts to files (or a webhook). Follow these
-steps in order. Each step has a verification with expected output — **do not proceed past a
-failed verification.** Stop and report if a step fails for a reason not covered in
-Troubleshooting.
+You are setting up `peptide-watch` to run unattended on a Linux VPS. Follow the steps in order;
+each has a verification — **do not proceed past a failed verification.** Stop and report if a
+step fails for a reason not covered in Troubleshooting.
+
+There are two parts:
+- **Part 1 — the tracker (required):** a Python CLI that scans public APIs on a schedule and
+  pushes alerts (Telegram/webhook/file). Steps 1–8.
+- **Part 2 — the cockpit (optional but recommended):** a read-only web dashboard + API, and a
+  dedicated Telegram briefing agent. Steps 9–14. Independent of Part 1 and addable later.
+
+## What runs where (the whole system)
+
+| Component | How it runs | Port | Always-on? |
+|---|---|---|---|
+| Tracker scan→deliver→digest | cron → `scripts/peptide_watch_daily.sh` | — | scheduled (2×/day) |
+| Weekly verify + backup + prune | cron → `scripts/peptide_watch_weekly.sh` | — | scheduled (weekly) |
+| Dashboard API **+ cockpit UI** | systemd → `peptide-watch serve` (one process serves both) | 8000 (localhost) | yes |
+| Telegram briefing agent | openclaw, post-scan | — | per scan |
+
+Secrets are **never** committed and **never** printed — they live only in a `chmod 600 .env`
+file (Step 4). Context: `docs/PROJECT_STATUS.md` (architecture), `docs/OPERATIONS.md` (ops),
+`docs/AGENT_BRIEFING_HANDOFF.md` (the briefing agent).
 
 Context you may need: `docs/PROJECT_STATUS.md` (architecture + state), `docs/OPERATIONS.md`
 (ops detail), `docs/ALERT_TAXONOMY.md` (what the alerts mean). Secrets are **never** committed
@@ -155,6 +172,135 @@ the very first delivery sends the whole backlog (one batched message per source 
 expected; afterward only new events send. The webhook URL is a secret — keep it only in
 `.env`.
 
+# Part 2 — Dashboard, API & briefing agent (optional cockpit)
+
+The cockpit gives the operator a fast web view to triage signals and a Telegram agent that
+narrates a daily briefing. Do Part 1 first (the scanner must be producing data). The dashboard
+and API are served by **one process on one port** — no separate web server, no CORS to manage.
+
+## Step 9 — Install Node (dashboard build only)
+
+```bash
+node --version 2>/dev/null || {
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+}
+node --version   # need v18+; v20 recommended
+```
+**Verify:** `node --version` prints v18 or newer. (On non-Debian hosts install Node 20 via the
+distro package manager or `nvm`.)
+
+## Step 10 — Build the dashboard (once)
+
+```bash
+cd dashboard
+npm ci || npm install
+npm run build           # → dashboard/dist/
+cd ..
+ls dashboard/dist/index.html
+```
+**Verify:** `dashboard/dist/index.html` exists. Rebuild after any `git pull` that touches
+`dashboard/` (Step 14).
+
+## Step 11 — Run the API + cockpit as a service (one port)
+
+```bash
+uv sync --locked --extra web     # adds fastapi+uvicorn to the locked core deps
+uv run peptide-watch serve --port 8000 &   # quick test
+sleep 3
+curl -s -o /dev/null -w "api %{http_code}\n" http://127.0.0.1:8000/api/health
+curl -s http://127.0.0.1:8000/ | grep -o "<title>[^<]*</title>"   # the cockpit HTML
+kill %1
+```
+**Verify:** the API returns `200` and `/` returns `<title>peptide-watch · cockpit</title>`
+(the API auto-detects `dashboard/dist` and serves it on the same port). Now install it as a
+systemd service so it survives reboots:
+
+```bash
+REPO="$(pwd)"; SVCUSER="$(whoami)"; UVBIN="$(command -v uv)"
+sudo tee /etc/systemd/system/peptide-watch-api.service >/dev/null <<UNIT
+[Unit]
+Description=peptide-watch dashboard API + cockpit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${SVCUSER}
+WorkingDirectory=${REPO}
+Environment=PATH=$(dirname "${UVBIN}"):/usr/local/bin:/usr/bin:/bin
+ExecStart=${UVBIN} run peptide-watch serve --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable --now peptide-watch-api
+sleep 3
+systemctl is-active peptide-watch-api
+curl -s -o /dev/null -w "live api %{http_code}\n" http://127.0.0.1:8000/api/health
+```
+**Verify:** `systemctl is-active` prints `active` and the curl prints `live api 200`. If the
+host has no systemd/sudo (e.g. a container), run it under tmux/`nohup` instead:
+`nohup uv run peptide-watch serve --port 8000 >logs/api.log 2>&1 &`.
+
+Note: the API binds **127.0.0.1 only** — it is never exposed to the internet. Keep it that way.
+
+## Step 12 — Reach the cockpit
+
+**Default (recommended): SSH tunnel.** From the operator's machine:
+```bash
+ssh -L 8000:localhost:8000 USER@VPS_HOST
+# then open http://localhost:8000 in a browser
+```
+One port, everything (cockpit + API) behind it. Nothing exposed publicly.
+
+**Alternative: nginx for a persistent URL** (only if the operator wants one). Put the API
+behind nginx with TLS + HTTP basic auth, proxying everything to the local API:
+```nginx
+server {
+  listen 443 ssl;
+  server_name watch.example.com;
+  # ssl_certificate ... ; ssl_certificate_key ... ;
+  auth_basic "peptide-watch"; auth_basic_user_file /etc/nginx/.htpasswd;
+  location / { proxy_pass http://127.0.0.1:8000; }
+}
+```
+(The API already SPA-falls-back internally, so no extra `try_files` rule is needed.)
+
+## Step 13 — The Telegram briefing agent (openclaw)
+
+Set up the dedicated agent from **`docs/AGENT_BRIEFING_HANDOFF.md`** (full system prompt, data
+contract, memory design, and the fail-closed compliance guardrail). Prereqs the agent needs:
+```bash
+curl -s http://127.0.0.1:8000/api/briefing | head -c 80   # or: uv run peptide-watch briefing --json
+echo "you should buy this now" | uv run peptide-watch check-language --stdin; echo "exit=$?"  # exit=1
+# Telegram bot token + chat id in .env (see Part 1 "phone alerts")
+```
+The agent fetches `GET /api/briefing` (or `peptide-watch briefing --json`) after each scan,
+narrates it to Telegram, learns over time, and pipes every draft through
+`peptide-watch check-language --stdin` so it can never publish advice.
+
+## Step 14 — Updating later
+
+```bash
+git pull
+uv sync --locked --extra web
+(cd dashboard && npm ci && npm run build)   # only if dashboard/ changed
+sudo systemctl restart peptide-watch-api
+uv run peptide-watch status
+```
+
+## Step 15 — Final report to the operator
+
+Report: which keys are set vs missing; that the scanner runs at 11:20/21:20 UTC; the cockpit
+is reachable at `http://localhost:8000` via `ssh -L 8000:localhost:8000 USER@VPS`; whether the
+briefing agent is configured; and the latest `peptide-watch status` output.
+
+---
+
 ## Troubleshooting
 
 - **`uv: command not found` in cron** — the scripts already export a PATH covering
@@ -184,6 +330,19 @@ expected; afterward only new events send. The webhook URL is a secret — keep i
   edit config to bypass.
 - **Clone auth fails** — try the SSH URL with a deploy key, or have the operator make the repo
   accessible. Do not embed credentials in the repo.
+- **API service fails to start** (`systemctl status peptide-watch-api`) — usual causes: the web
+  extra isn't installed (`uv sync --locked --extra web`), or the `uv` PATH in the unit is wrong
+  (`command -v uv` and fix the `Environment=PATH=` line). `journalctl -u peptide-watch-api -n 50`
+  shows the error.
+- **Cockpit shows "SAMPLE", not "LIVE"** — the browser can't reach `/api`. If using the SSH
+  tunnel, confirm port 8000 is forwarded and the service is `active`. The dashboard uses
+  same-origin relative `/api` calls, so when served by `peptide-watch serve` there is no CORS to
+  configure.
+- **`/api` works but `/` 404s** — the dashboard wasn't built; run Step 10 (`npm run build`) so
+  `dashboard/dist/index.html` exists, then restart the service.
+- **`uv sync --locked` (without `--extra web`) broke the API** — that removes the web deps. Re-run
+  `uv sync --locked --extra web`. The cron scripts only `uv run` (never `uv sync`), so they don't
+  hit this.
 
 ## Hard rules
 

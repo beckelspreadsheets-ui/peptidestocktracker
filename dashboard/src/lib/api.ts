@@ -1,7 +1,10 @@
 import { mockBriefing, mockEvents, mockWatchlist, mockSourceHealth } from "./mock";
 import type { Briefing, EventItem, EventsPage, SourceHealth, WatchlistCompany } from "./types";
 
-const BASE = (import.meta.env.VITE_API_BASE as string | undefined) || "http://localhost:8000";
+// Default to relative URLs: works same-origin when the API serves the built
+// dashboard, and via the Vite dev proxy in development. Override with
+// VITE_API_BASE only when the API is on a different origin.
+const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
 async function get<T>(path: string, fallback: T): Promise<{ data: T; live: boolean }> {
   try {

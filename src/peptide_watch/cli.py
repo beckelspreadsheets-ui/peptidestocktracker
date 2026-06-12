@@ -487,10 +487,16 @@ def serve(
     config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
     host: str = typer.Option("127.0.0.1", "--host", help="Bind host (localhost by default)."),
     port: int = typer.Option(8000, "--port", help="Bind port."),
+    dashboard: Path | None = typer.Option(
+        None,
+        "--dashboard",
+        help="Serve a built dashboard dir (default: dashboard/dist if it exists).",
+    ),
 ) -> None:
     """Launch the read-only dashboard API (requires the [web] extra).
 
-    Localhost-bound by default; reach it via an SSH tunnel or a reverse proxy.
+    If a built dashboard exists (dashboard/dist), it is served on the same port
+    — one process, one port, no CORS. Localhost-bound; reach it via SSH tunnel.
     """
 
     try:
@@ -501,7 +507,13 @@ def serve(
         typer.echo("Web dependencies missing. Install with: uv sync --extra web", err=True)
         raise typer.Exit(code=1) from exc
     initialize_database(db)
-    application = create_app(db_path=db, config_dir=config_dir)
+    dist = dashboard
+    if dist is None:
+        default_dist = Path("dashboard/dist")
+        dist = default_dist if (default_dist / "index.html").exists() else None
+    application = create_app(db_path=db, config_dir=config_dir, dashboard_dist=dist)
+    if dist:
+        typer.echo(f"Serving dashboard from {dist} + API at http://{host}:{port}")
     uvicorn.run(application, host=host, port=port)
 
 

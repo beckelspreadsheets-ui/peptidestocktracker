@@ -148,3 +148,22 @@ def test_api_connection_is_read_only(client):
             con.execute("INSERT INTO events (event_type, title) VALUES ('x','y')")
     finally:
         con.close()
+
+
+def test_serves_dashboard_when_dist_present(tmp_path):
+    from peptide_watch.database import init_db
+    from peptide_watch.web.app import create_app
+
+    db_path = init_db(tmp_path / "watch.db")
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<title>cockpit</title>", encoding="utf-8")
+    (dist / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    c = TestClient(create_app(db_path=db_path, config_dir=CONFIG_DIR, dashboard_dist=dist))
+
+    assert "cockpit" in c.get("/").text  # index.html
+    assert c.get("/events").status_code == 200  # SPA fallback
+    assert "console.log" in c.get("/assets/app.js").text  # real static file
+    assert c.get("/api/health").status_code == 200  # API not shadowed
+    # path traversal is refused (falls back to index.html, never serves outside dist)
+    assert "cockpit" in c.get("/../../etc/hosts").text
