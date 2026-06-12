@@ -440,6 +440,77 @@ def list_adapters() -> None:
         typer.echo(f"{name}: {doc[0] if doc else ''}")
 
 
+@app.command("prune")
+def prune_command(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    older_than_days: int = typer.Option(
+        180, "--older-than-days", min=1, help="Delete delivered events/source rows older than this."
+    ),
+) -> None:
+    """Prune old delivered events, deliveries, and source_documents.
+
+    Snapshots and raw blobs are immutable (the replay/audit trail) and are
+    never pruned — keep them via dated backups.
+    """
+
+    from peptide_watch.retention import prune
+
+    deleted = prune(db, older_than_days=older_than_days)
+    typer.echo(
+        f"Pruned (older than {older_than_days}d): "
+        + ", ".join(f"{count} {table}" for table, count in deleted.items())
+    )
+
+
+@app.command("status")
+def status(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+) -> None:
+    """Health check: latest run, errors, and storage — for unattended monitoring."""
+
+    from peptide_watch.retention import storage_report
+
+    initialize_database(db)
+    connection = connect(db)
+    try:
+        runs = ledger.list_runs(connection, limit=1)
+        recent = ledger.list_runs(connection, limit=10)
+    finally:
+        connection.close()
+
+    if not runs:
+        typer.echo("No runs yet. Run `peptide-watch scan`.")
+        raise typer.Exit(code=0)
+
+    latest = runs[0]
+    summary = latest["summary"] or {}
+    errors = summary.get("errors", {})
+    skipped = summary.get("skipped", {})
+    typer.echo(f"Latest run:  {latest['run_id']}  [{latest['status']}]")
+    typer.echo(f"  started:   {latest['started_at']}")
+    typer.echo(f"  finished:  {latest['finished_at'] or '(running)'}")
+    typer.echo(f"  sources:   {summary.get('tasks_by_status', {})}")
+    if errors:
+        for source_id, message in errors.items():
+            typer.echo(f"  ERROR {source_id}: {message}")
+    if skipped:
+        for source_id, message in skipped.items():
+            typer.echo(f"  SKIPPED {source_id}: {message}")
+
+    failed_runs = [r["run_id"] for r in recent if r["status"] == "failed"]
+    if failed_runs:
+        typer.echo(f"  recent failed runs: {', '.join(failed_runs)}")
+
+    report = storage_report(db)
+    typer.echo(
+        f"Storage: {report['events']} events, {report['deliveries']} deliveries, "
+        f"{report['raw_blobs']} blobs ({report['raw_blob_bytes'] / 1e6:.1f} MB)"
+    )
+    # Non-zero exit if the latest run failed — lets cron/monitoring detect trouble.
+    if latest["status"] == "failed":
+        raise typer.Exit(code=1)
+
+
 @app.command("backup-db")
 def backup_db(
     db: Path = typer.Option(

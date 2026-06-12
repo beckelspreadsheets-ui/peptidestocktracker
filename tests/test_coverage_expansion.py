@@ -559,3 +559,31 @@ def test_503b_facilities_page_claimed_by_fda_family() -> None:
     coverage = source_coverage(config)
     assert coverage["fda_503b_facilities"] == "fda"
     assert coverage["openfda_shortages"] == "openfda_shortages"
+
+
+def test_prune_removes_old_delivered_events_keeps_pending(tmp_path) -> None:
+    from peptide_watch.events import insert_event
+    from peptide_watch.retention import prune
+
+    db_path = init_db(tmp_path / "watch.db")
+    with sqlite3.connect(db_path) as con:
+        # an old delivered event, and an old pending one
+        for ext, created in (("old-sent", "2020-01-01T00:00:00"), ("old-pending", "2020-01-01T00:00:00")):
+            insert_event(
+                con, source_id="s", external_id=ext, event_type="t", field="f",
+                old_value="a", new_value="b", run_id="r", title="t", what_changed="w",
+                why_it_matters="y", confidence="high", severity="high", directness="d",
+                stock_market_relevance="r",
+            )
+        con.execute("UPDATE events SET created_at = '2020-01-01T00:00:00'")
+        ids = {r[1]: r[0] for r in con.execute("SELECT id, external_id FROM events")}
+        con.execute("INSERT INTO deliveries (event_id, channel, status) VALUES (?, 'console', 'sent')", (ids["old-sent"],))
+        con.execute("INSERT INTO deliveries (event_id, channel, status) VALUES (?, 'console', 'pending')", (ids["old-pending"],))
+        con.commit()
+
+    deleted = prune(db_path, older_than_days=30)
+
+    assert deleted["events"] == 1  # only the delivered one
+    with sqlite3.connect(db_path) as con:
+        remaining = [r[0] for r in con.execute("SELECT external_id FROM events")]
+    assert remaining == ["old-pending"]  # pending event preserved

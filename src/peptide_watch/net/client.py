@@ -230,6 +230,8 @@ class HttpClient:
 
     def close(self) -> None:
         self._client.close()
+        if self._fallback_client is not None:
+            self._fallback_client.close()
 
     def _throttle(self, url: str) -> None:
         if self._rate_limit_seconds <= 0:

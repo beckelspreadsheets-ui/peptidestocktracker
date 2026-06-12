@@ -177,3 +177,22 @@ def test_deliver_and_digest_cli_commands(tmp_path) -> None:
         ["deliver", "--db", str(db_path), "--channel", "bogus"],
     )
     assert file_channel.exit_code == 1
+
+
+def test_webhook_failure_does_not_leak_token(monkeypatch) -> None:
+    import httpx
+
+    from peptide_watch.alerts.channels import WebhookChannel
+
+    secret_url = "https://discord.com/api/webhooks/123/SECRETTOKEN_xyz"
+
+    def handler(request):
+        return httpx.Response(500, text="boom")
+
+    channel = WebhookChannel(url=secret_url, transport=httpx.MockTransport(handler))
+    import pytest
+
+    with pytest.raises(RuntimeError) as excinfo:
+        channel.send("alert")
+    assert "SECRETTOKEN" not in str(excinfo.value)
+    assert "500" in str(excinfo.value)

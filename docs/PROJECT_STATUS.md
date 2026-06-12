@@ -135,7 +135,21 @@ uv run peptide-watch verify              # re-hash blobs/snapshots for corruptio
 uv run peptide-watch backup-db           # dated VACUUM INTO backup
 uv run peptide-watch list-adapters       # registered scanner families
 uv run peptide-watch uspto-check         # verify USPTO key + print response shape
+uv run peptide-watch status              # health check: latest run, errors, storage
+uv run peptide-watch prune               # drop delivered events/source rows >180d
 ```
+
+## Pre-VPS robustness audit (2026-06-12)
+
+Two parallel fresh-eyes audits run before deploy. Genuine findings fixed: webhook token
+could leak into stored delivery errors (now sanitized — status/type only); `HttpClient.close()`
+didn't close the urllib fallback; weekly logs weren't pruned; no data retention (added
+`prune` + `status` commands, prune wired into the weekly script). Verified-false-positives
+(skipped): API keys do NOT leak into tracebacks (they are headers, not in `format_exc()`);
+no FD exhaustion (each scan is a separate process the OS reaps); WAL self-checkpoints on
+connection close; snapshots/blobs are immutable *by design* (the audit trail, kept via
+backups, not pruned). Measured growth: 39 MB after 6 scans with content-addressed dedup —
+steady-state growth is the change rate, ~hundreds of MB/year, not a blocker.
 
 Pipeline scripts: `scripts/peptide_watch_daily.sh` (scan→deliver→digest),
 `scripts/peptide_watch_weekly.sh` (verify+backup). Both launchd/cron-safe.

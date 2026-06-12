@@ -75,9 +75,21 @@ class WebhookChannel:
         self._transport = transport
 
     def send(self, message: str) -> None:
-        with httpx.Client(timeout=self._timeout, transport=self._transport) as client:
-            response = client.post(self.url, json={self.field: message})
-            response.raise_for_status()
+        # The webhook URL carries a secret token, and httpx puts the full URL
+        # in HTTP-error messages — so re-raise sanitized errors (status/type
+        # only) to keep the token out of stored delivery errors and logs.
+        try:
+            with httpx.Client(timeout=self._timeout, transport=self._transport) as client:
+                response = client.post(self.url, json={self.field: message})
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(
+                f"webhook delivery failed: HTTP {exc.response.status_code}"
+            ) from None
+        except httpx.HTTPError as exc:
+            raise RuntimeError(
+                f"webhook delivery failed: {type(exc).__name__}"
+            ) from None
 
 
 def get_channel(name: str, *, directory: str | Path | None = None) -> Channel:

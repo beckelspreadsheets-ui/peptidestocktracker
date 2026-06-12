@@ -16,8 +16,10 @@ LOG="logs/weekly-$STAMP.log"
   uv run peptide-watch verify
   VERIFY_STATUS=$?
   uv run peptide-watch backup-db
-  # keep roughly two months of backups
+  uv run peptide-watch prune   # delivered events/source rows older than 180d
+  # keep roughly two months of backups and weekly logs
   find backups -name '*.db' -mtime +60 -delete 2>/dev/null
+  find logs -name 'weekly-*.log' -mtime +60 -delete 2>/dev/null
   exit "$VERIFY_STATUS"
 } >>"$LOG" 2>&1
 STATUS=$?

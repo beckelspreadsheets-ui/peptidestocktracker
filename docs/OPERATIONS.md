@@ -89,6 +89,8 @@ cron on macOS does not run while the machine sleeps. If the Mac is the host, use
 
 Each day or two:
 
+0. `uv run peptide-watch status` — one-glance health: latest run, per-source errors,
+   storage. Exits non-zero if the latest run failed (cron/monitoring can alert on it).
 1. `uv run peptide-watch runs list` — every run `completed`? Any `failed`?
 2. `uv run peptide-watch runs show <run_id>` — per-source errors, circuit-breaker skips,
    and counts. A source that is always `skipped` is dead and needs its URL fixed.
