@@ -149,6 +149,14 @@ class HttpClient:
             try:
                 response = client.get(url, params=params, headers=headers)
             except httpx.TransportError:
+                if self._fallback_client is not None and host not in self._urllib_hosts:
+                    # A WAF (e.g. Akamai in front of fda.gov) may drop httpx's
+                    # connection on its TLS fingerprint rather than returning a
+                    # 403. Switch this host to the urllib fallback (different TLS
+                    # stack) before spending retries.
+                    self._urllib_hosts.add(host)
+                    attempt -= 1
+                    continue
                 if attempt >= self._max_attempts:
                     raise
                 time.sleep(self._backoff(attempt, None))
@@ -158,8 +166,8 @@ class HttpClient:
                 and self._fallback_client is not None
                 and host not in self._urllib_hosts
             ):
-                # Possible TLS-fingerprint block: retry this host via urllib
-                # without consuming a retry attempt.
+                # 403 fingerprint block: retry this host via urllib without
+                # consuming a retry attempt.
                 self._urllib_hosts.add(host)
                 attempt -= 1
                 continue

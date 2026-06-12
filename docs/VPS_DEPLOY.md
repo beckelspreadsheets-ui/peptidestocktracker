@@ -125,13 +125,47 @@ for the watchlist.
 - `logs/scan-*.log` shows each run; old logs auto-prune (30d). Weekly job verifies integrity,
   backs up the DB, and prunes delivered events >180d.
 
+## Setting up phone alerts (webhook) — optional
+
+By default alerts are written to `alerts_outbox/alerts-YYYYMMDD.md`. For push alerts:
+
+**Discord:** Server → a channel → Edit Channel → Integrations → Webhooks → New Webhook →
+Copy URL. Put in `.env`:
+```
+PEPTIDE_WATCH_CHANNEL=webhook
+PEPTIDE_WATCH_WEBHOOK_URL=https://discord.com/api/webhooks/XXXX/YYYY
+PEPTIDE_WATCH_WEBHOOK_FIELD=content
+```
+**Slack:** create an Incoming Webhook at api.slack.com/messaging/webhooks; same as above but
+`PEPTIDE_WATCH_WEBHOOK_FIELD=text`.
+
+Test it without waiting for cron: `uv run peptide-watch deliver --channel webhook`. NOTE:
+the very first delivery sends the whole backlog (one batched message per source per run) —
+expected; afterward only new events send. The webhook URL is a secret — keep it only in
+`.env`.
+
 ## Troubleshooting
 
 - **`uv: command not found` in cron** — the scripts already export a PATH covering
   `~/.local/bin`. If uv installed elsewhere, add its dir to the `export PATH` line at the top
   of `scripts/peptide_watch_daily.sh` and `_weekly.sh`.
-- **`regulations_gov` errors with 429** — expected without a data.gov key; harmless (other 11
+- **`regulations_gov` errors with 429** — expected without a data.gov key; harmless (other
   families still complete). Add `PEPTIDE_WATCH_REGULATIONS_API_KEY` to `.env` to fix.
+- **`fda` family returns 403 / connection blocked** — fda.gov sits behind a WAF (Akamai) that
+  may block a datacenter IP. The HTTP client auto-retries blocked hosts through a different
+  TLS stack (urllib), which fixes *fingerprint* blocks; a pure *IP* block it cannot. First,
+  confirm it is actually failing in a real scan (not just a manual curl):
+  `uv run peptide-watch fda scan` then `uv run peptide-watch runs show <id>`. If still blocked:
+  1. **Accept the partial loss** — this is the recommended default. The FDA *regulatory
+     signal* is redundant: PCAC/503A/503B/compounding activity also arrives via
+     `regulations_gov` (regulations.gov), `federal_register` (federalregister.gov), and
+     `openfda_enforcement`/`openfda_shortages` (api.fda.gov) — all different hosts that are
+     not usually IP-blocked. The circuit breaker auto-skips the blocked `fda` pages after 3
+     failures, so they become quiet, not noisy.
+  2. **Or route through a proxy** — the client honors standard proxy env vars. Add to `.env`:
+     `HTTPS_PROXY=http://user:pass@proxy-host:port` (a residential proxy avoids datacenter
+     blocks). All traffic then uses it; set `NO_PROXY=clinicaltrials.gov,api.fda.gov` to
+     exclude hosts that already work, if you want to minimize proxy usage.
 - **A source repeatedly `skipped`** in `runs show` — the circuit breaker tripped after 3
   consecutive failures (e.g. a host blocking the VPS IP). Inspect the error; the source self-
   retries after a cooldown. Not fatal.

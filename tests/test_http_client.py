@@ -170,3 +170,29 @@ def test_403_falls_back_to_alternate_transport_per_host() -> None:
     assert first.body == b"ok" and second.body == b"ok"
     assert len(primary_calls) == 1  # host remembered; no second 403
     assert len(fallback_calls) == 2
+
+
+def test_transport_error_falls_back_to_alternate_transport() -> None:
+    primary_calls = []
+    fallback_calls = []
+
+    def primary(request):
+        primary_calls.append(str(request.url))
+        raise httpx.ConnectError("connection reset by WAF")
+
+    def fallback(request):
+        fallback_calls.append(str(request.url))
+        return httpx.Response(200, content=b"ok")
+
+    client = HttpClient(
+        rate_limit_seconds=0,
+        max_attempts=4,
+        transport=httpx.MockTransport(primary),
+        fallback_transport=httpx.MockTransport(fallback),
+    )
+
+    result = client.get("https://www.fda.gov/some/page")
+
+    assert result.body == b"ok"
+    assert len(primary_calls) == 1   # one httpx attempt, then switched
+    assert len(fallback_calls) == 1  # fallback served it
