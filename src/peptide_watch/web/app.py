@@ -32,9 +32,12 @@ def create_app(
     config = load_config(config_dir)  # fail fast if config is broken
 
     app = FastAPI(title="peptide-watch", version="1.0", docs_url="/api/docs")
+    # Private localhost tool: allow any localhost/127.0.0.1 port (dev server,
+    # preview, reverse proxy) so the dashboard origin port never matters.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins or DEFAULT_CORS,
+        allow_origins=cors_origins or [],
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_methods=["GET"],
         allow_headers=["*"],
     )
