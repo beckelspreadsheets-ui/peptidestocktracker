@@ -398,8 +398,18 @@ def discoveries(
             FROM company_documents
             WHERE json_extract(metadata_json, '$.discovery') = 1
               AND company_name IS NOT NULL
+              -- exclude fund/passive-holder filings (noise, may predate the
+              -- scanner-side filter)
+              AND COALESCE(filing_type, '') NOT LIKE 'NPORT%'
+              AND COALESCE(filing_type, '') NOT LIKE 'N-CSR%'
+              AND COALESCE(filing_type, '') NOT LIKE 'N-CEN%'
+              AND COALESCE(filing_type, '') NOT LIKE '13F%'
+              AND COALESCE(filing_type, '') NOT LIKE '497%'
+              AND COALESCE(filing_type, '') NOT LIKE 'SC 13%'
             GROUP BY company_name
-            ORDER BY filings DESC, latest DESC
+            -- freshest disclosures first: a recent first-time filer is a
+            -- hotter early lead than a long-known name with many old filings
+            ORDER BY latest DESC, filings DESC
             LIMIT ?
             """,
             (limit,),
