@@ -374,6 +374,51 @@ def uspto_check(
     )
 
 
+@app.command("discoveries")
+def discoveries(
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    limit: int = typer.Option(30, "--limit", min=1, help="Maximum companies to show."),
+) -> None:
+    """Rank non-watchlist companies found via SEC full-text — the gem-review queue.
+
+    These are filers not on your watchlist that disclosed a target peptide.
+    Promote the promising ones into config/companies.yaml.
+    """
+
+    initialize_database(db)
+    connection = connect(db)
+    try:
+        rows = connection.execute(
+            """
+            SELECT company_name,
+                   COUNT(*) AS filings,
+                   COUNT(DISTINCT peptide_ids_json) AS peptide_sets,
+                   MAX(filing_date) AS latest,
+                   GROUP_CONCAT(DISTINCT filing_type) AS forms
+            FROM company_documents
+            WHERE json_extract(metadata_json, '$.discovery') = 1
+              AND company_name IS NOT NULL
+            GROUP BY company_name
+            ORDER BY filings DESC, latest DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    finally:
+        connection.close()
+    if not rows:
+        typer.echo("No discoveries yet. Run a scan with the sec_fulltext family first.")
+        return
+    typer.echo("| company | filings | latest | forms |")
+    typer.echo("| --- | --- | --- | --- |")
+    for name, filings, _sets, latest, forms in rows:
+        typer.echo(f"| {name} | {filings} | {latest or ''} | {forms or ''} |")
+    typer.echo(
+        f"\n{len(rows)} non-watchlist filers disclosed a target peptide. "
+        "Review and promote promising names to config/companies.yaml."
+    )
+
+
 @app.command("list-adapters")
 def list_adapters() -> None:
     """List registered source-family adapters."""

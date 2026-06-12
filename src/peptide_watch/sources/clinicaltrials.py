@@ -361,7 +361,10 @@ def write_trial_record(
                 f"Confirmed fact: official ClinicalTrials.gov record {record.nct_id} "
                 f"was detected with status {record.overall_status or 'unknown'}."
             ),
-            severity="critical" if record.overall_status == "RECRUITING" else "high",
+            # A newly recruiting trial is a catalyst (critical); first capture of
+            # an already-existing trial is backfill for the digest (medium). Real
+            # movement is caught by the status/phase/results change events (high).
+            severity="critical" if record.overall_status == "RECRUITING" else "medium",
         )
         return StoreResult(
             nct_id=record.nct_id, inserted=True, changed=False, events_created=int(created)

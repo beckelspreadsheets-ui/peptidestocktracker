@@ -402,8 +402,18 @@ def _has_relevant_match(document: CompanyDocument) -> bool:
     return bool(document.peptide_ids or document.keyword_matches)
 
 
+def _is_discovery(document: CompanyDocument) -> bool:
+    """A filer not on the watchlist, found via full-text search — a new name."""
+
+    return document.metadata.get("discovery") is True
+
+
 def _event_type(document: CompanyDocument) -> str:
     if document.source_type == "sec_filing":
+        if _is_discovery(document):
+            # A company we don't track disclosing a target peptide for the
+            # first time — the highest-value early signal in the system.
+            return "new_company_peptide_disclosure"
         return "sec_filing_target_mention"
     if "commercial_launch" in document.keyword_matches:
         return "commercial_launch_claim"
@@ -412,11 +422,18 @@ def _event_type(document: CompanyDocument) -> str:
 
 def _severity(document: CompanyDocument) -> str:
     if document.source_type == "sec_filing":
-        return "high"
+        if _is_discovery(document):
+            return "high"  # new filer = candidate gem -> immediate review
+        # A routine filing from a company we already track is not news; the
+        # genuine catalysts (status changes, launches) come through other
+        # event types. Keep known-company mentions in the digest.
+        return "medium"
     if "clinical_asset" in document.keyword_matches and document.peptide_ids:
         return "high"
     if "licensing_or_acquisition" in document.keyword_matches and document.peptide_ids:
         return "high"
+    # Commercial-launch claims from microcaps are often promotional; keep them
+    # in the digest (medium) per the alert taxonomy.
     return "medium" if document.peptide_ids or document.keyword_matches else "low"
 
 

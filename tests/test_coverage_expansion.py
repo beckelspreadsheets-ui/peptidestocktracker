@@ -195,7 +195,33 @@ def test_sec_fulltext_matches_watchlist_and_flags_discoveries(tmp_path) -> None:
     discovery = next(row for row in rows if row[0] is None)
     assert '"discovery":false' in known[1].replace(" ", "")
     assert '"discovery":true' in discovery[1].replace(" ", "")
-    assert event_types == {"sec_filing_target_mention"}
+    # Known watchlist filer -> routine mention; new filer -> elevated discovery.
+    assert event_types == {"sec_filing_target_mention", "new_company_peptide_disclosure"}
+
+
+def test_sec_fulltext_drops_fund_holdings_filings(tmp_path) -> None:
+    db_path = init_db(tmp_path / "watch.db")
+    hits = [
+        {
+            "_id": "0001-26-1:doc.htm",
+            "_source": {
+                "cik": ["1612930"],
+                "display_names": ["Angel Oak Funds Trust  (CIK 0001612930)"],
+                "file_type": "NPORT-EX",
+                "file_date": "2026-06-10",
+            },
+        },
+        _fts_hit("Real Peptide Biotech Inc.  (RPBI)  (CIK 0008888888)", "0001-26-2", cik="8888888"),
+    ]
+    result = scan_sec_fulltext(
+        db_path, config_dir=CONFIG_DIR, client=FakeSecFullTextClient(hits), phrases=["BPC-157"]
+    )
+
+    assert result.stored == 1  # the fund filing is dropped, the operating company kept
+    with sqlite3.connect(db_path) as connection:
+        names = [r[0] for r in connection.execute("SELECT company_name FROM company_documents")]
+    assert any("Real Peptide Biotech" in (n or "") for n in names)
+    assert not any("Angel Oak" in (n or "") for n in names)
 
 
 class FakeOpenFdaClient:

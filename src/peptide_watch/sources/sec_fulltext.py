@@ -30,6 +30,27 @@ SEC_FTS_BASE_URL = "https://efts.sec.gov/LATEST/search-index"
 PARSER_VERSION = 1
 QUOTED_TERM_RE = re.compile(r'"([^"]+)"')
 
+# Investment-fund / passive-holder filing forms: a fund holding a ticker that
+# happens to mention a peptide is not an operating company making peptides.
+# Dropping these is the single biggest discovery-precision win.
+FUND_FORM_PREFIXES = (
+    "NPORT",  # fund portfolio holdings
+    "N-CSR",  # fund shareholder reports
+    "N-CEN",
+    "N-Q",
+    "N-MFP",
+    "497",  # mutual-fund prospectus
+    "13F",  # institutional holdings
+    "SC 13G",  # passive >5% holder
+    "SC 13D",  # activist holder (rarely peptide-relevant)
+    "13F-HR",
+)
+
+
+def is_fund_form(form_type: str) -> bool:
+    normalized = form_type.strip().upper()
+    return any(normalized.startswith(prefix) for prefix in FUND_FORM_PREFIXES)
+
 
 class SecFullTextClient:
     """EDGAR full-text search (efts.sec.gov) client."""
@@ -164,6 +185,10 @@ def normalize_fts_hit(hit: dict[str, Any], phrase: str, config: WatchConfig):
     display = str(display_names[0]) if display_names else ""
     file_type = str(source.get("file_type") or source.get("form_type") or "")
     file_date = str(source.get("file_date") or "")
+
+    # Drop fund/passive-holder filings — pure discovery noise.
+    if is_fund_form(file_type):
+        return None
 
     company_key, ticker = _match_watchlist_company(display, config)
     url = (

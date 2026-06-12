@@ -1,5 +1,26 @@
 # Alert Taxonomy
 
+## Delivery philosophy — the funnel
+
+Two delivery tiers, each with one job:
+
+- **Immediate (critical + high)** → pushed the moment a scan finds it. Reserved for genuine
+  *early movers*: a new company disclosing a target peptide, a patent assigned to a public
+  company, a comment period opening on a peptide-compounding rule, a newly recruiting or
+  advancing trial, a new peptide-drug shortage. Low volume, high signal.
+- **Digest (medium + low)** → swept into a daily summary. This is the "review 10 to find 1"
+  pile: routine mentions of companies already on the watchlist, first capture of existing
+  trials, PubMed, grants, docket activity.
+
+Guiding rule: **existence is not news; change and novelty are.** A trial *existing* or a
+tracked company *mentioning* a peptide again is digest-tier; a *new* filer, a *status change*,
+or a *regulatory door opening* is immediate. Fund/passive-holder SEC filings (NPORT, N-CSR,
+13F, 497, SC 13G/D) are dropped entirely — a fund holding a ticker is not a peptide company.
+
+The highest-value early signal is **`new_company_peptide_disclosure`**: a filer not on the
+watchlist disclosing a target peptide for the first time, surfaced by SEC full-text search.
+Review these in `peptide-watch discoveries` and promote the promising ones to the watchlist.
+
 ## Severity
 
 ### Critical
@@ -10,15 +31,20 @@
 - Public company files material target-peptide disclosure.
 
 ### High
-- New patent publication.
-- Trial status update.
+- **New company peptide disclosure** — a non-watchlist filer mentions a target peptide for
+  the first time (`new_company_peptide_disclosure`). The gem-discovery signal.
+- New patent publication; patent assigned to a *private* watchlist company.
+- Trial status / phase / results update.
+- Regulatory comment period opens on a peptide-compounding notice.
+- New peptide-drug shortage; SBIR/STTR (small-company) grant award.
 - FDA briefing document appears.
-- Investor presentation adds target peptide or asset.
 
 ### Medium
-- Conference abstract.
-- PubMed/preprint publication.
-- Commercial launch claim from public company press release.
+- Routine SEC mention by a company already on the watchlist (digest — not news).
+- First capture of an already-existing trial (backfill, not a new catalyst).
+- Conference abstract; PubMed/preprint publication.
+- Commercial launch claim from a microcap press release (often promotional).
+- NIH grant award (non-SBIR); routine regulatory docket activity.
 - Patent application filing claim not yet published.
 
 ### Low

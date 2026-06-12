@@ -188,7 +188,9 @@ def test_scan_sec_filings_with_fake_client_creates_review_event(tmp_path) -> Non
         event = connection.execute(
             "SELECT event_type, confidence, severity FROM events"
         ).fetchone()
-    assert event == ("sec_filing_target_mention", "high", "high")
+    # A routine filing from a watchlist company is digest-tier (medium); the
+    # source confidence stays high (tier-A primary source).
+    assert event == ("sec_filing_target_mention", "high", "medium")
 
 
 def test_normalize_sec_filing_preserves_metadata() -> None:
