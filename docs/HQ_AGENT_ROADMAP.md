@@ -138,6 +138,11 @@ Acceptance:
 
 Purpose: give the HQ group practical controls.
 
+Status as of 2026-06-13: complete. Command handling is deterministic and repo-native via
+`peptide-watch hq-command`; the Telegram HQ long-poller runs as
+`peptide-watch-commands.service`. Operator workflow mutations write to
+`data/operator_state.db` only; scanner facts and raw public-source data remain untouched.
+
 Initial commands:
 
 ```text
@@ -389,4 +394,3 @@ Current next build recommendation:
 2. Add operator memory store.
 3. Implement `/watch`, `/ignore`, `/status`, `/briefing`, and `/why`.
 4. Wire cockpit to read operator memory.
-

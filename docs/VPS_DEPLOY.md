@@ -18,6 +18,7 @@ There are two parts:
 | Weekly verify + backup + prune | cron → `scripts/peptide_watch_weekly.sh` | — | scheduled (weekly) |
 | Dashboard API **+ cockpit UI** | systemd → `peptide-watch serve` (one process serves both) | 8000 (localhost) | yes |
 | Telegram briefing agent | openclaw, post-scan | — | per scan |
+| Telegram HQ commands | systemd → `scripts/peptide_watch_telegram_commands.py` | — | yes |
 
 Secrets are **never** committed and **never** printed — they live only in a `chmod 600 .env`
 file (Step 4). Context: `docs/PROJECT_STATUS.md` (architecture), `docs/OPERATIONS.md` (ops),
@@ -283,7 +284,25 @@ The agent fetches `GET /api/briefing` (or `peptide-watch briefing --json`) after
 narrates it to Telegram, learns over time, and pipes every draft through
 `peptide-watch check-language --stdin` so it can never publish advice.
 
-## Step 14 — Updating later
+## Step 14 — Install Telegram HQ command service
+
+This service lets the peptide Telegram bot answer slash commands in the configured HQ group.
+It uses the existing `.env` values and stores operator workflow state in
+`data/operator_state.db`.
+
+```bash
+sudo cp deploy/peptide-watch-commands.service /etc/systemd/system/peptide-watch-commands.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now peptide-watch-commands
+sleep 3
+systemctl is-active peptide-watch-commands
+uv run peptide-watch hq-command "/status"
+```
+
+**Verify:** `systemctl is-active` prints `active`, and the CLI command prints a factual HQ
+status without exposing `.env` values.
+
+## Step 15 — Updating later
 
 ```bash
 git pull
@@ -293,7 +312,7 @@ sudo systemctl restart peptide-watch-api
 uv run peptide-watch status
 ```
 
-## Step 15 — Final report to the operator
+## Step 16 — Final report to the operator
 
 Report: which keys are set vs missing; that the scanner runs at 11:20/21:20 UTC; the cockpit
 is reachable at `http://localhost:8000` via `ssh -L 8000:localhost:8000 USER@VPS`; whether the

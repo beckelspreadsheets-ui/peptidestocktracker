@@ -64,3 +64,17 @@ def test_send_telegram_script_has_dry_run_and_language_gate(tmp_path) -> None:
     )
     assert blocked.returncode == 2
     assert "language gate failed" in blocked.stderr
+
+
+def test_telegram_command_service_assets_exist() -> None:
+    script = ROOT / "scripts" / "peptide_watch_telegram_commands.py"
+    unit = ROOT / "deploy" / "peptide-watch-commands.service"
+
+    script_text = script.read_text(encoding="utf-8")
+    unit_text = unit.read_text(encoding="utf-8")
+
+    assert "handle_command" in script_text
+    assert "PEPTIDE_WATCH_TELEGRAM_TOKEN" in script_text
+    assert "PEPTIDE_WATCH_TELEGRAM_CHAT_ID" in script_text
+    assert "peptide_watch_telegram_commands.py --skip-existing" in unit_text
+    assert "cat .env" not in script_text

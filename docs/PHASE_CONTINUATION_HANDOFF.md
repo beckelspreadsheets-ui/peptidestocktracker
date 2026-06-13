@@ -153,6 +153,12 @@ Acceptance:
 
 Goal: implement first useful HQ commands.
 
+Status as of 2026-06-13: complete. Repo-native command handling now lives in
+`peptide_watch.operator_commands`, exposed through `peptide-watch hq-command`, and the
+Telegram HQ group long-poller runs via `peptide-watch-commands.service`. Phase 2 covers all
+roadmap commands: `/status`, `/briefing`, `/discoveries`, `/sourcehealth`, `/deadlines`,
+`/watch`, `/ignore`, `/promote`, `/archive`, `/why`, `/notes`, and `/setpriority`.
+
 Minimum commands:
 - `/status`
 - `/briefing`

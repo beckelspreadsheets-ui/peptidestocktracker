@@ -25,6 +25,7 @@ DEFAULT_TARGETS = (
     ROOT / "src" / "peptide_watch" / "sources",
     ROOT / "src" / "peptide_watch" / "cli.py",
     ROOT / "src" / "peptide_watch" / "events.py",
+    ROOT / "src" / "peptide_watch" / "operator_commands.py",
     ROOT / "src" / "peptide_watch" / "replay.py",
     ROOT / "src" / "peptide_watch" / "relevance.py",
 )

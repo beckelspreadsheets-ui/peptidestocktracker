@@ -63,6 +63,45 @@ sending, and never prints token or chat-id values. The OpenClaw cron job
 `peptide-watch-briefing-agent` should keep `delivery.mode` set to `none`; its final
 run summary records `SENT run_id=<id> via peptide bot` after the bot send succeeds.
 
+## Telegram HQ commands
+
+The HQ group command surface is deterministic and repo-native. The CLI entrypoint is:
+
+```bash
+uv run peptide-watch hq-command "/status"
+uv run peptide-watch hq-command "/watch BHIC public filing recurrence"
+```
+
+The Telegram bot long-poller is:
+
+```bash
+uv run python scripts/peptide_watch_telegram_commands.py --skip-existing
+```
+
+In production it runs as `peptide-watch-commands.service` from
+`deploy/peptide-watch-commands.service`. It reads the same `.env` Telegram token/chat id,
+ignores messages outside the configured HQ group, replies only to slash commands, and checks
+every response with the shared language gate before sending. Mutating commands write only
+operator workflow state to `data/operator_state.db`; scanner facts, source documents, raw
+blobs, events, and deliveries are never changed by commands.
+
+Current commands:
+
+```text
+/status
+/briefing
+/discoveries
+/sourcehealth
+/deadlines
+/watch <entity> [note]
+/ignore <entity> [reason]
+/promote <entity> [note]
+/archive <entity> [reason]
+/why <entity>
+/notes <entity>
+/setpriority <entity> low|normal|high
+```
+
 ## Scheduling on a VPS (recommended) — cron
 
 Twice daily around the US market (pre-open and post-close), weekly hygiene on Sundays.

@@ -1,0 +1,16 @@
+[Unit]
+Description=peptide-watch Telegram HQ command surface
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+WorkingDirectory=/home/openclaw/.openclaw/workspace/peptidestocktracker
+Environment=PATH=/home/openclaw/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/openclaw/.local/bin/uv run python scripts/peptide_watch_telegram_commands.py --skip-existing
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

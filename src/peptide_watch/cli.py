@@ -481,6 +481,41 @@ def check_language_command(
     typer.echo("clean")
 
 
+@app.command("hq-command")
+def hq_command(
+    command_text: str = typer.Argument(..., help="Slash command text, for example '/status'."),
+    db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
+    config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
+    operator_db: Path = typer.Option(
+        Path("data/operator_state.db"),
+        "--operator-db",
+        help="SQLite database path for operator workflow state.",
+    ),
+) -> None:
+    """Handle one deterministic Peptide Watch HQ command.
+
+    This command surface is for Telegram/control-room usage. It reads public
+    tracker facts and writes only operator workflow state for mutating commands.
+    """
+
+    from peptide_watch.operator_commands import handle_command
+
+    try:
+        result = handle_command(
+            command_text,
+            db_path=db,
+            config_dir=config_dir,
+            operator_db_path=operator_db,
+        )
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(result.text)
+
+
 @app.command("serve")
 def serve(
     db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),

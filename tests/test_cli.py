@@ -119,3 +119,12 @@ def test_check_language_clean_and_forbidden() -> None:
     # the whitelisted disclaimer phrase must NOT trip the gate
     ok = runner.invoke(app, ["check-language", "--text", "This is not a buy/sell recommendation."])
     assert ok.exit_code == 0, ok.output
+
+
+def test_hq_command_status(tmp_path) -> None:
+    db_path = tmp_path / "watch.db"
+    result = CliRunner().invoke(app, ["hq-command", "/status", "--db", str(db_path)])
+
+    assert result.exit_code == 0, result.output
+    assert "Peptide Watch HQ status" in result.output
+    assert "Latest run:" in result.output
