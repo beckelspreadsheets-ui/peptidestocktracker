@@ -22,8 +22,10 @@ from peptide_watch.operator_memory import (
     get_briefing_cursor,
     init_operator_memory,
     latest_run_id,
+    list_attention,
     list_entities,
     operator_key,
+    record_attention,
     record_entity_events,
     record_interaction,
     set_briefing_cursor,
@@ -189,10 +191,31 @@ def _briefing_text(
         row["entity_key"]
         for row in list_entities(operator_db_path, statuses=("ignore", "archived"))
     }
+    ignored_by_key = {
+        row["entity_key"]: row
+        for row in list_entities(operator_db_path, statuses=("ignore", "archived"))
+    }
     followed = list_entities(operator_db_path, statuses=("watch", "promoted"))
+    followed_by_key = {row["entity_key"]: row for row in followed}
+    attention = list_attention(operator_db_path)
+    attention_by_key = {row["entity_key"]: row for row in attention}
+    attention_keys = set(attention_by_key)
     top_events = [
         event for event in data["top_events"] if not _matches_entity_keys(event, ignored_keys)
     ]
+    quieted_changes = [
+        event
+        for event in data["top_events"]
+        if (key := _first_matching_entity_key(event, ignored_keys))
+        and _is_material_change_after_quiet(event, ignored_by_key[key])
+    ]
+    top_events.sort(
+        key=lambda event: _operator_event_sort_key(
+            event,
+            followed_by_key=followed_by_key,
+            attention_keys=attention_keys,
+        )
+    )
     discoveries = [
         item for item in data["discoveries"] if not _matches_entity_keys(item, ignored_keys)
     ]
@@ -206,19 +229,41 @@ def _briefing_text(
         names = ", ".join(
             f"{row['display_name']} ({row['status']}, {row['priority']})" for row in followed[:8]
         )
-        lines.append(f"Operator memory: following {names}.")
+        lines.append(f"You're following: {names}.")
+    if attention:
+        names = ", ".join(
+            f"{row['display_name']} ({row['attention_count']} ask(s))" for row in attention[:5]
+        )
+        lines.append(f"Recently asked about: {names}.")
     if ignored_keys:
-        lines.append(f"Operator memory: {len(ignored_keys)} ignored/archived item(s) kept out of normal prominence.")
+        lines.append(f"Operator memory: {len(ignored_keys)} ignored/archived item(s) kept quiet unless a newer material public-source change appears.")
+    lines.append(
+        "Prioritization: followed items, recent asks, source recurrence, severity/directness, and deadlines can change order and labels; source facts stay unchanged."
+    )
     lines.append("Top signals:")
     if not top_events:
         lines.append("(none in window)")
     for event in top_events[:5]:
+        labels = _operator_event_labels(
+            event,
+            followed_by_key=followed_by_key,
+            attention_by_key=attention_by_key,
+        )
+        label_text = f" {' '.join(labels)}" if labels else ""
         lines.append(
             f"- [{event['score']}] {event['title']} ({event.get('severity') or 'unknown'}, "
-            f"{event.get('event_type') or 'unknown'})"
+            f"{event.get('event_type') or 'unknown'}){label_text}"
         )
         if event.get("what_changed"):
             lines.append(f"  Fact: {event['what_changed']}")
+    if quieted_changes:
+        lines.append("Quieted items with newer material public-source changes:")
+        for event in quieted_changes[:3]:
+            key = _first_matching_entity_key(event, ignored_keys)
+            row = ignored_by_key.get(key or "", {})
+            lines.append(
+                f"- {row.get('display_name') or key}: {event['title']} ({event.get('severity') or 'unknown'})"
+            )
     lines.append("Discovery queue:")
     if not discoveries:
         lines.append("(none)")
@@ -226,14 +271,27 @@ def _briefing_text(
         lines.append(
             f"- {item['company_name']}: {item['filings']} filing(s), latest {item.get('latest') or '?'}"
         )
+    periods = data.get("active_comment_periods", [])
+    lines.append("Deadline reminders:")
+    if not periods:
+        lines.append("(none currently recorded)")
+    for item in periods[:5]:
+        lines.append(
+            f"- {item.get('title') or 'Untitled'} closes {item.get('comment_end_date') or '?'} "
+            f"({item.get('docket_id') or 'no docket id'})"
+        )
     lines.append(DISCLAIMER)
     set_briefing_cursor(operator_db_path, run_id=latest_run_id(data), digest=digest)
     return "\n".join(lines)
 
 
 def _matches_entity_keys(item: dict[str, Any], keys: set[str]) -> bool:
+    return _first_matching_entity_key(item, keys) is not None
+
+
+def _first_matching_entity_key(item: dict[str, Any], keys: set[str]) -> str | None:
     if not keys:
-        return False
+        return None
     candidates = [
         item.get("title"),
         item.get("external_id"),
@@ -242,13 +300,55 @@ def _matches_entity_keys(item: dict[str, Any], keys: set[str]) -> bool:
     ]
     text = " ".join(str(value) for value in candidates if value)
     if not text:
-        return False
+        return None
     normalized = operator_key(text)
     words = {operator_key(part) for part in re_split_entity_words(text)}
     for key in keys:
         if key in normalized or key in words:
-            return True
-    return False
+            return key
+    return None
+
+
+def _operator_event_sort_key(
+    event: dict[str, Any],
+    *,
+    followed_by_key: dict[str, dict[str, Any]],
+    attention_keys: set[str],
+) -> tuple[int, int, int]:
+    followed_key = _first_matching_entity_key(event, set(followed_by_key))
+    attention_key = _first_matching_entity_key(event, attention_keys)
+    priority_rank = {"high": 0, "normal": 1, "low": 2}
+    if followed_key:
+        row = followed_by_key[followed_key]
+        return (0, priority_rank.get(str(row.get("priority") or "normal"), 1), -int(event.get("score") or 0))
+    if attention_key:
+        return (1, 1, -int(event.get("score") or 0))
+    return (2, 1, -int(event.get("score") or 0))
+
+
+def _operator_event_labels(
+    event: dict[str, Any],
+    *,
+    followed_by_key: dict[str, dict[str, Any]],
+    attention_by_key: dict[str, dict[str, Any]],
+) -> list[str]:
+    labels: list[str] = []
+    followed_key = _first_matching_entity_key(event, set(followed_by_key))
+    if followed_key:
+        row = followed_by_key[followed_key]
+        labels.append(f"[following: {row['status']}/{row['priority']}]")
+    attention_key = _first_matching_entity_key(event, set(attention_by_key))
+    if attention_key and attention_key != followed_key:
+        labels.append("[recently asked]")
+    return labels
+
+
+def _is_material_change_after_quiet(event: dict[str, Any], row: dict[str, Any]) -> bool:
+    created_at = str(event.get("created_at") or "")
+    quieted_at = str(row.get("updated_at") or "")
+    if not created_at or not quieted_at or created_at <= quieted_at:
+        return False
+    return (event.get("severity") or "") in {"critical", "high"}
 
 
 def re_split_entity_words(text: str) -> list[str]:
@@ -419,6 +519,12 @@ def _notes_text(args: str, db_path: str | Path, operator_db_path: str | Path) ->
         con.row_factory = sqlite3.Row
         row = con.execute("SELECT * FROM operator_entities WHERE entity_key = ?", (key,)).fetchone()
     appearances = _appearance_rows(entity, db_path, limit=3)
+    record_attention(
+        operator_db_path,
+        entity,
+        command="/notes",
+        fact_summary=_attention_fact_summary(appearances),
+    )
     lines = [f"Notes for {entity}:"]
     if row:
         lines.append(f"Status: {row['status']}; operator priority: {row['priority']}")
@@ -443,9 +549,19 @@ def _why_text(args: str, db_path: str | Path, operator_db_path: str | Path) -> s
         con.row_factory = sqlite3.Row
         state = con.execute("SELECT * FROM operator_entities WHERE entity_key = ?", (key,)).fetchone()
     appearances = _appearance_rows(entity, db_path, limit=5)
+    record_attention(
+        operator_db_path,
+        entity,
+        command="/why",
+        fact_summary=_attention_fact_summary(appearances),
+    )
     lines = [f"Why {entity} surfaced:"]
     if state:
         lines.append(f"Operator state: {state['status']}; priority {state['priority']}.")
+    lines.append("Attention memory updated for future briefing order and labels.")
+    lines.append(
+        "Prioritization uses source recurrence, severity/directness, deadlines, and operator workflow labels without changing source facts."
+    )
     if not appearances:
         lines.append("No matching event facts found in the current tracker DB.")
     for item in appearances:
@@ -454,6 +570,13 @@ def _why_text(args: str, db_path: str | Path, operator_db_path: str | Path) -> s
             lines.append(f"  Fact: {item['what_changed']}")
     lines.append(DISCLAIMER)
     return "\n".join(lines)
+
+
+def _attention_fact_summary(appearances: list[dict[str, Any]]) -> str | None:
+    if not appearances:
+        return None
+    first = appearances[0]
+    return str(first.get("what_changed") or first.get("title") or "").strip()[:1000] or None
 
 
 def _appearance_rows(entity: str, db_path: str | Path, *, limit: int) -> list[dict[str, Any]]:

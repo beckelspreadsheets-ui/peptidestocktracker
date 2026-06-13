@@ -107,6 +107,20 @@ def _create_tables(con: sqlite3.Connection) -> None:
     )
     con.execute(
         """
+        CREATE TABLE IF NOT EXISTS operator_attention (
+          entity_key TEXT PRIMARY KEY,
+          display_name TEXT NOT NULL,
+          attention_count INTEGER NOT NULL DEFAULT 0,
+          first_attention_at TEXT NOT NULL,
+          last_attention_at TEXT NOT NULL,
+          last_command TEXT,
+          last_message_id TEXT,
+          latest_fact_summary TEXT
+        )
+        """
+    )
+    con.execute(
+        """
         CREATE TABLE IF NOT EXISTS briefing_cursor (
           id INTEGER PRIMARY KEY CHECK (id = 1),
           last_run_id TEXT,
@@ -119,6 +133,7 @@ def _create_tables(con: sqlite3.Connection) -> None:
     con.execute("CREATE INDEX IF NOT EXISTS idx_operator_entities_priority ON operator_entities(priority)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_operator_entity_events_key ON operator_entity_events(entity_key)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_operator_interactions_entity ON operator_interactions(entity_key)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_operator_attention_last ON operator_attention(last_attention_at)")
 
 
 def _migrate_operator_entities(con: sqlite3.Connection) -> None:
@@ -342,6 +357,126 @@ def record_interaction(
         con.commit()
 
 
+def record_attention(
+    path: str | Path,
+    display_name: str,
+    *,
+    command: str,
+    message_id: str | None = None,
+    fact_summary: str | None = None,
+) -> dict[str, Any]:
+    """Record that the operator asked about an entity.
+
+    This is workflow attention only. It stores counts, timestamps, and the
+    latest factual source summary; it never stores a verdict or recommendation.
+    """
+
+    init_operator_memory(path)
+    key = operator_key(display_name)
+    now = now_utc()
+    with sqlite3.connect(path) as con:
+        con.row_factory = sqlite3.Row
+        con.execute(
+            """
+            INSERT INTO operator_attention (
+              entity_key, display_name, attention_count, first_attention_at,
+              last_attention_at, last_command, last_message_id, latest_fact_summary
+            )
+            VALUES (?, ?, 1, ?, ?, ?, ?, ?)
+            ON CONFLICT(entity_key) DO UPDATE SET
+              display_name = excluded.display_name,
+              attention_count = operator_attention.attention_count + 1,
+              last_attention_at = excluded.last_attention_at,
+              last_command = excluded.last_command,
+              last_message_id = excluded.last_message_id,
+              latest_fact_summary = COALESCE(excluded.latest_fact_summary, operator_attention.latest_fact_summary)
+            """,
+            (key, display_name, now, now, command, message_id, fact_summary),
+        )
+        con.commit()
+        row = con.execute("SELECT * FROM operator_attention WHERE entity_key = ?", (key,)).fetchone()
+    return dict(row)
+
+
+def list_attention(path: str | Path, *, limit: int = 8) -> list[dict[str, Any]]:
+    init_operator_memory(path)
+    with sqlite3.connect(path) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            """
+            SELECT * FROM operator_attention
+            ORDER BY last_attention_at DESC, display_name
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def operator_snapshot(path: str | Path, *, limit: int = 8) -> dict[str, Any]:
+    """Return public-safe operator context without creating a missing DB."""
+
+    target = Path(path)
+    if not target.exists():
+        return {
+            "following": [],
+            "quieted": [],
+            "recently_asked": [],
+            "prioritization_note": (
+                "Operator memory can change ordering and labels, but not source facts."
+            ),
+        }
+    uri = f"file:{target.resolve()}?mode=ro"
+    with sqlite3.connect(uri, uri=True) as con:
+        con.row_factory = sqlite3.Row
+        following = con.execute(
+            """
+            SELECT entity_key, display_name, status, priority, appearance_count,
+                   source_url_count, first_seen_at, last_seen_at, updated_at
+            FROM operator_entities
+            WHERE status IN ('watch', 'promoted')
+            ORDER BY
+              CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+              updated_at DESC,
+              display_name
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        quieted = con.execute(
+            """
+            SELECT entity_key, display_name, status, priority, appearance_count,
+                   source_url_count, first_seen_at, last_seen_at, updated_at
+            FROM operator_entities
+            WHERE status IN ('ignore', 'archived')
+            ORDER BY updated_at DESC, display_name
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        try:
+            attention = con.execute(
+                """
+                SELECT entity_key, display_name, attention_count, first_attention_at,
+                       last_attention_at, last_command, latest_fact_summary
+                FROM operator_attention
+                ORDER BY last_attention_at DESC, display_name
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            attention = []
+    return {
+        "following": [dict(row) for row in following],
+        "quieted": [dict(row) for row in quieted],
+        "recently_asked": [dict(row) for row in attention],
+        "prioritization_note": (
+            "Operator memory can change ordering and labels, but not source facts."
+        ),
+    }
+
+
 def get_briefing_cursor(path: str | Path) -> dict[str, Any] | None:
     init_operator_memory(path)
     with sqlite3.connect(path) as con:
@@ -384,4 +519,3 @@ def latest_run_id(data: Mapping[str, Any]) -> str | None:
     latest_run = (data.get("source_health") or {}).get("latest_run") or {}
     value = latest_run.get("run_id")
     return str(value) if value else None
-

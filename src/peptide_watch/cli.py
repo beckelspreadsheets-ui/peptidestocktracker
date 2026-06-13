@@ -413,6 +413,11 @@ def discoveries(
 def briefing_command(
     db: Path = typer.Option(Path("data/watch.db"), "--db", help="SQLite database path."),
     config_dir: Path = typer.Option(Path("config"), "--config-dir", help="Config directory."),
+    operator_db: Path = typer.Option(
+        Path("data/operator_state.db"),
+        "--operator-db",
+        help="Optional operator memory database for briefing context.",
+    ),
     output_format: str = typer.Option(
         "markdown", "--format", help="Output format: markdown or json."
     ),
@@ -427,6 +432,7 @@ def briefing_command(
 
     import json as json_module
 
+    from peptide_watch.operator_memory import operator_snapshot
     from peptide_watch.relevance import briefing, render_briefing_markdown
 
     if output_format not in {"markdown", "json"}:
@@ -438,6 +444,17 @@ def briefing_command(
         data = briefing(connection, config, limit=limit)
     finally:
         connection.close()
+    snapshot = operator_snapshot(operator_db)
+    snapshot["deadline_reminders"] = [
+        {
+            "title": item.get("title"),
+            "comment_end_date": item.get("comment_end_date"),
+            "docket_id": item.get("docket_id"),
+            "url": item.get("url"),
+        }
+        for item in data.get("active_comment_periods", [])[:8]
+    ]
+    data["operator_memory"] = snapshot
     rendered = (
         json_module.dumps(data, indent=2)
         if output_format == "json"

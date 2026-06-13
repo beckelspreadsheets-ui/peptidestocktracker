@@ -305,6 +305,13 @@ Acceptance:
 
 Purpose: make every interaction improve the next briefing.
 
+Status as of 2026-06-13: complete for the repo-native feedback loop. /why and
+/notes now record factual attention memory in the separate operator DB. /briefing
+uses watched/promoted entities, recently asked-about entities, ignored/archive state,
+and public comment deadlines to reorder and label the briefing without changing source
+facts. The CLI JSON briefing now includes an operator_memory block so the scheduled
+briefing agent can use the same context for factual ordering and annotation.
+
 Loop:
 1. Scan completes.
 2. Tracker computes deterministic briefing.
@@ -402,7 +409,6 @@ Also check OpenClaw cron:
 - Session target: `session:peptide-watch-briefing-agent`
 
 Current next build recommendation:
-1. Create Telegram HQ group destination.
-2. Add operator memory store.
-3. Implement `/watch`, `/ignore`, `/status`, `/briefing`, and `/why`.
-4. Wire cockpit to read operator memory.
+1. Let Phase 5 soak through real HQ group usage and the next scheduled briefing.
+2. Confirm the operator_memory briefing JSON improves ordering without noisy repeats.
+3. Then move to Phase 6 productization/docs, keeping private operator memory out of any template.

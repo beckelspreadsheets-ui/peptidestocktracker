@@ -100,16 +100,19 @@ originate there. You reorganize and narrate; you never fetch facts elsewhere or 
 
 ## 3. Data contract & cadence
 
-- **Fetch:** `peptide-watch briefing --json` (or `GET http://localhost:8000/api/briefing`).
+- **Fetch:** `peptide-watch briefing --format json` (or `GET http://localhost:8000/api/briefing`).
 - **When:** after each scan. Chain the agent at the end of `scripts/peptide_watch_daily.sh`, or
   poll `peptide-watch status` until the latest `run_id` is `completed`/`failed` and newer than the
   last one the agent posted.
 - **Idempotent:** if `source_health.latest_run.run_id` is unchanged since the agent's last post,
   skip (no duplicate briefing).
-- The JSON shape: `top_events[]` (with `score`, `score_reasons`, all compliance fields),
-  `discoveries[]`, `active_comment_periods[]`, `active_shortages[]`, `source_health`, `counts`, and
-  a `disclaimers` block (`global`/`microcap`/`regulatory`/`company_source`) — **pull disclaimers
+- The JSON shape: top_events[] (with score, score_reasons, all compliance fields),
+  discoveries[], active_comment_periods[], active_shortages[], source_health, counts,
+  operator_memory (following, quieted, recently_asked, deadline_reminders, prioritization_note),
+  and a disclaimers block (global/microcap/regulatory/company_source) — **pull disclaimers
   verbatim from this block; never hand-type them** (eliminates drift).
+- Use operator_memory only for ordering and factual labels. It can say what Seth is following,
+  what he recently asked about, and which deadlines need reminders; it never changes source facts.
 
 ## 4. Memory / learning (facts and the user's engagement only — never verdicts)
 

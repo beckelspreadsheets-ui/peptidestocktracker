@@ -169,7 +169,7 @@ def test_operator_memory_schema_and_cursor_are_phase3_durable(tmp_path) -> None:
         operator_db_path=operator_db,
     ).text
 
-    assert "Operator memory: following BHIC (watch, normal)." in first
+    assert "You're following: BHIC (watch, normal)." in first
     assert "Duplicate briefing suppressed by operator memory cursor." in second
 
 
@@ -190,5 +190,35 @@ def test_ignored_entity_loses_normal_briefing_prominence(tmp_path) -> None:
         operator_db_path=operator_db,
     ).text
 
-    assert "ignored/archived item(s) kept out of normal prominence" in briefing
+    assert "ignored/archived item(s) kept quiet" in briefing
     assert "CohBar disclosed MOTS-c" not in briefing
+
+
+def test_entity_questions_update_attention_memory_and_briefing_labels(tmp_path) -> None:
+    watch_db = _seed_db(tmp_path)
+    operator_db = tmp_path / "operator_state.db"
+
+    why = handle_command(
+        "/why BHIC",
+        db_path=watch_db,
+        config_dir=CONFIG_DIR,
+        operator_db_path=operator_db,
+    ).text
+    briefing = handle_command(
+        "/briefing",
+        db_path=watch_db,
+        config_dir=CONFIG_DIR,
+        operator_db_path=operator_db,
+    ).text
+
+    with sqlite3.connect(operator_db) as con:
+        row = con.execute(
+            "SELECT display_name, attention_count, last_command FROM operator_attention WHERE entity_key = 'bhic'"
+        ).fetchone()
+
+    assert row == ("BHIC", 1, "/why")
+    assert "Attention memory updated for future briefing order and labels." in why
+    assert "Recently asked about: BHIC (1 ask(s))." in briefing
+    assert "[recently asked]" in briefing
+    assert "Prioritization:" in briefing
+    assert "Deadline reminders:" in briefing

@@ -93,6 +93,8 @@ def test_briefing_json_command(tmp_path) -> None:
     data = json.loads(result.output)
     assert data["schema_version"] == "1.0"
     assert "top_events" in data and "disclaimers" in data
+    assert "operator_memory" in data
+    assert data["operator_memory"]["prioritization_note"]
 
 
 def test_briefing_markdown_has_disclaimer(tmp_path) -> None:

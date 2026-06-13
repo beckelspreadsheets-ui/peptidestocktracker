@@ -222,6 +222,13 @@ Acceptance:
 
 Goal: each interaction improves the next briefing.
 
+Status as of 2026-06-13: complete for the repo-native feedback loop. Entity
+questions through /why and /notes write factual attention memory to the separate
+operator DB. /briefing now uses watched/promoted state, recently asked-about
+entities, ignored/archive state, and public comment deadlines to order and label
+the briefing without changing tracker facts. The CLI JSON briefing includes an
+operator_memory block for the scheduled briefing agent.
+
 Acceptance:
 - Asking about an entity updates factual attention memory.
 - Watched entities appear in a "you're following" section.
