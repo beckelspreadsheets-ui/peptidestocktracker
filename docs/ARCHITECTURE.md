@@ -32,3 +32,21 @@
 ## Data storage
 
 SQLite for MVP. Tables are defined in `schema/schema.sql`.
+
+## HQ operating-system layer
+
+The deployed Peptide Watch HQ has two durable stores:
+
+- **Fact store:** the tracker SQLite database with public-source records, raw
+  blobs/snapshots, runs, events, deliveries, and deterministic source facts.
+- **Operator memory:** a separate SQLite database for workflow state such as
+  watched, promoted, ignored, and archived entities, factual attention counts,
+  notes, and briefing cursors.
+
+The operator store can change dashboard ordering and briefing labels, but it
+must not change source facts or create recommendations. Read-only cockpit users
+can inspect source facts and operator state exposed by safe API endpoints.
+Mutations remain in the Telegram HQ command surface until dashboard auth is
+explicitly designed and tested.
+
+For reusable verticals and template boundaries, see `docs/PRODUCTIZATION.md`.

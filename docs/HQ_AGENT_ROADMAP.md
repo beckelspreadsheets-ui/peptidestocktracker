@@ -343,6 +343,12 @@ Acceptance:
 
 Purpose: make this reusable.
 
+Status as of 2026-06-13: productization documentation is drafted in
+`docs/PRODUCTIZATION.md`. The guide captures reusable architecture, clone
+checklist, public-safe sharing modes, and the explicit boundary that secrets,
+live databases, logs, offsets, and personal operator memory must not be copied
+into any template. The one-week live soak remains pending.
+
 Shareable cockpit:
 - Keep `peptide.showcase-designs.com` protected.
 - Add read-only friend credentials if desired.

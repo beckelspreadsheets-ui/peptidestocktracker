@@ -240,6 +240,12 @@ Acceptance:
 
 Goal: package the pattern as reusable public-source catalyst OS.
 
+Status as of 2026-06-13: productization documentation is drafted in
+`docs/PRODUCTIZATION.md`, with reusable architecture, clone checklist,
+public-safe sharing modes, and explicit exclusions for secrets, live databases,
+logs, offsets, and personal operator memory. The one-week live soak remains the
+final acceptance gate before calling Phase 6 complete.
+
 Acceptance:
 - One-week stable soak.
 - Clean docs for cloning the architecture.

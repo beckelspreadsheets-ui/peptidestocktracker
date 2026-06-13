@@ -85,3 +85,15 @@ def test_weekly_hygiene_backs_up_operator_memory() -> None:
 
     assert "data/operator_state.db" in script
     assert "--backups-dir backups/operator-state" in script
+
+
+def test_productization_docs_exclude_private_runtime_state() -> None:
+    doc = (ROOT / "docs" / "PRODUCTIZATION.md").read_text(encoding="utf-8")
+
+    assert "public-source catalyst operating" in doc
+    assert "What Must Not Be Copied" in doc
+    assert ".env" in doc
+    assert "data/operator_state.db" in doc
+    assert "personal operator memory" in doc
+    assert "<TELEGRAM_BOT_TOKEN>" in doc
+    assert "Soak Gate" in doc

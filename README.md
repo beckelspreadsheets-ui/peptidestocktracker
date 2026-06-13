@@ -52,6 +52,10 @@ Secondary targets:
 
 Website build handoff: see `docs/WEBSITE_PRD.md` for the detailed Agent OS/site-builder spec.
 
+Productization handoff: see `docs/PRODUCTIZATION.md` for the reusable
+public-source catalyst OS pattern, including what must not be copied into a
+template or shared deployment.
+
 ## Compliance reminder
 
 This project is not financial advice and must never provide buy/sell recommendations. It should surface public-source evidence, classify confidence, and prompt follow-up research.
