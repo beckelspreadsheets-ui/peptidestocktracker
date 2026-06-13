@@ -189,6 +189,14 @@ Acceptance:
 
 Purpose: make the agent learn over time.
 
+Status as of 2026-06-13: complete. Operator memory remains in the separate
+`data/operator_state.db` SQLite database created for the HQ command surface, now
+with the Phase 3 memory schema: durable entity status/priority/notes,
+appearance/source counts, factual entity-event memory, command interactions, and
+`briefing_cursor` dedupe. Weekly hygiene backs up the operator DB separately.
+Ignored/archived entities are kept out of normal `/briefing` prominence, while
+watched/promoted entities are called out factually as operator workflow state.
+
 Recommended store:
 - SQLite table in a separate DB, e.g. `data/operator_memory.db`, or tables clearly namespaced away from scanner facts.
 - Do not store secrets.

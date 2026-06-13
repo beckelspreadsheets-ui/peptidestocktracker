@@ -78,3 +78,10 @@ def test_telegram_command_service_assets_exist() -> None:
     assert "PEPTIDE_WATCH_TELEGRAM_CHAT_ID" in script_text
     assert "peptide_watch_telegram_commands.py --skip-existing" in unit_text
     assert "cat .env" not in script_text
+
+
+def test_weekly_hygiene_backs_up_operator_memory() -> None:
+    script = (ROOT / "scripts" / "peptide_watch_weekly.sh").read_text(encoding="utf-8")
+
+    assert "data/operator_state.db" in script
+    assert "--backups-dir backups/operator-state" in script

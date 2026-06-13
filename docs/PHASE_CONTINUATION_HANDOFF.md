@@ -178,6 +178,13 @@ Acceptance:
 
 Goal: persist Seth's workflow state.
 
+Status as of 2026-06-13: complete. Operator workflow state is stored in
+`data/operator_state.db` with Phase 3 tables for entities, factual entity
+events, interactions, and `briefing_cursor`. Weekly hygiene backs it up to
+`backups/operator-state`. `/briefing` now calls out watched/promoted entities,
+keeps ignored/archived entities out of normal prominence, and suppresses exact
+duplicate briefings through the cursor.
+
 Tasks:
 - Add operator memory SQLite schema or equivalent.
 - Add read/write helpers.

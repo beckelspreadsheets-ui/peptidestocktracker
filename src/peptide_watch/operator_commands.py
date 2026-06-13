@@ -10,19 +10,29 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from peptide_watch.config import load_config
 from peptide_watch.database import connect, init_db
 from peptide_watch.language_gate import check_text
+from peptide_watch.operator_memory import (
+    VALID_PRIORITIES,
+    briefing_digest,
+    get_briefing_cursor,
+    init_operator_memory,
+    latest_run_id,
+    list_entities,
+    operator_key,
+    record_entity_events,
+    record_interaction,
+    set_briefing_cursor,
+    upsert_entity,
+)
 from peptide_watch.relevance import DISCLAIMERS, briefing, discoveries_rows
 from peptide_watch.runtime import ledger
 from peptide_watch.web.queries import health_counts, source_health
 
-VALID_STATUSES = {"watch", "ignore", "promoted", "archived"}
-VALID_PRIORITIES = {"low", "normal", "high"}
 MUTATING_COMMANDS = {"/watch", "/ignore", "/promote", "/archive", "/setpriority"}
 DISCLAIMER = DISCLAIMERS["global"]
 
@@ -34,55 +44,8 @@ class CommandResult:
     mutated: bool = False
 
 
-def operator_key(value: str) -> str:
-    """Normalize an operator entity key without losing the display name."""
-
-    key = re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
-    if not key:
-        raise ValueError("entity is required")
-    return key[:120]
-
-
 def init_operator_db(path: str | Path) -> Path:
-    target = Path(path)
-    if target.parent != Path("."):
-        target.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(target) as con:
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS operator_entities (
-              entity_key TEXT PRIMARY KEY,
-              display_name TEXT NOT NULL,
-              status TEXT NOT NULL CHECK(status IN ('watch', 'ignore', 'promoted', 'archived')),
-              priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low', 'normal', 'high')),
-              user_notes TEXT,
-              created_by TEXT NOT NULL DEFAULT 'telegram',
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL
-            )
-            """
-        )
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS operator_interactions (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              message_id TEXT,
-              entity_key TEXT,
-              command TEXT NOT NULL,
-              user_text TEXT,
-              response_summary TEXT,
-              created_at TEXT NOT NULL
-            )
-            """
-        )
-        con.execute(
-            "CREATE INDEX IF NOT EXISTS idx_operator_entities_status ON operator_entities(status)"
-        )
-        con.execute(
-            "CREATE INDEX IF NOT EXISTS idx_operator_interactions_entity ON operator_interactions(entity_key)"
-        )
-        con.commit()
-    return target
+    return init_operator_memory(path)
 
 
 def handle_command(
@@ -108,7 +71,7 @@ def handle_command(
         elif command == "/status":
             result = CommandResult(command, _status_text(db_path))
         elif command == "/briefing":
-            result = CommandResult(command, _briefing_text(db_path, config_dir))
+            result = CommandResult(command, _briefing_text(db_path, config_dir, operator_db_path))
         elif command == "/discoveries":
             result = CommandResult(command, _discoveries_text(db_path))
         elif command == "/sourcehealth":
@@ -116,9 +79,9 @@ def handle_command(
         elif command == "/deadlines":
             result = CommandResult(command, _deadlines_text(db_path, config_dir))
         elif command in {"/watch", "/ignore", "/promote", "/archive"}:
-            result = _set_status_command(command, args, operator_db_path)
+            result = _set_status_command(command, args, db_path, operator_db_path)
         elif command == "/setpriority":
-            result = _set_priority_command(args, operator_db_path)
+            result = _set_priority_command(args, db_path, operator_db_path)
         elif command == "/why":
             result = CommandResult(command, _why_text(args, db_path, operator_db_path))
         elif command == "/notes":
@@ -143,10 +106,6 @@ def _clean(
     if result.command:
         _record_interaction(operator_db_path, result, message_id=message_id, user_text=user_text)
     return result
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _help_text() -> str:
@@ -208,20 +167,52 @@ def _status_text(db_path: str | Path) -> str:
     return "\n".join(lines)
 
 
-def _briefing_text(db_path: str | Path, config_dir: str | Path) -> str:
+def _briefing_text(
+    db_path: str | Path,
+    config_dir: str | Path,
+    operator_db_path: str | Path,
+) -> str:
     config = load_config(config_dir)
     with _open_watch_db(db_path) as con:
         data = briefing(con, config, limit=5)
+    digest = briefing_digest(data)
+    cursor = get_briefing_cursor(operator_db_path)
+    if cursor and cursor.get("last_posted_hash") == digest:
+        posted = cursor.get("last_posted_at") or "previously"
+        run = cursor.get("last_run_id") or latest_run_id(data) or "unknown run"
+        return (
+            f"No new Peptide Watch HQ briefing since {run} was posted at {posted}.\n"
+            "Duplicate briefing suppressed by operator memory cursor.\n"
+            f"{DISCLAIMER}"
+        )
+    ignored_keys = {
+        row["entity_key"]
+        for row in list_entities(operator_db_path, statuses=("ignore", "archived"))
+    }
+    followed = list_entities(operator_db_path, statuses=("watch", "promoted"))
+    top_events = [
+        event for event in data["top_events"] if not _matches_entity_keys(event, ignored_keys)
+    ]
+    discoveries = [
+        item for item in data["discoveries"] if not _matches_entity_keys(item, ignored_keys)
+    ]
     lines = [f"Peptide Watch HQ briefing - {data['generated_at']}"]
     counts = data["counts"]
     lines.append(
         f"Counts: {counts['events_immediate']} immediate, {counts['events_digest']} digest, "
         f"{counts['discoveries']} discoveries, {counts['active_comment_periods']} comment periods."
     )
+    if followed:
+        names = ", ".join(
+            f"{row['display_name']} ({row['status']}, {row['priority']})" for row in followed[:8]
+        )
+        lines.append(f"Operator memory: following {names}.")
+    if ignored_keys:
+        lines.append(f"Operator memory: {len(ignored_keys)} ignored/archived item(s) kept out of normal prominence.")
     lines.append("Top signals:")
-    if not data["top_events"]:
+    if not top_events:
         lines.append("(none in window)")
-    for event in data["top_events"][:5]:
+    for event in top_events[:5]:
         lines.append(
             f"- [{event['score']}] {event['title']} ({event.get('severity') or 'unknown'}, "
             f"{event.get('event_type') or 'unknown'})"
@@ -229,14 +220,39 @@ def _briefing_text(db_path: str | Path, config_dir: str | Path) -> str:
         if event.get("what_changed"):
             lines.append(f"  Fact: {event['what_changed']}")
     lines.append("Discovery queue:")
-    if not data["discoveries"]:
+    if not discoveries:
         lines.append("(none)")
-    for item in data["discoveries"][:5]:
+    for item in discoveries[:5]:
         lines.append(
             f"- {item['company_name']}: {item['filings']} filing(s), latest {item.get('latest') or '?'}"
         )
     lines.append(DISCLAIMER)
+    set_briefing_cursor(operator_db_path, run_id=latest_run_id(data), digest=digest)
     return "\n".join(lines)
+
+
+def _matches_entity_keys(item: dict[str, Any], keys: set[str]) -> bool:
+    if not keys:
+        return False
+    candidates = [
+        item.get("title"),
+        item.get("external_id"),
+        item.get("company_name"),
+        item.get("what_changed"),
+    ]
+    text = " ".join(str(value) for value in candidates if value)
+    if not text:
+        return False
+    normalized = operator_key(text)
+    words = {operator_key(part) for part in re_split_entity_words(text)}
+    for key in keys:
+        if key in normalized or key in words:
+            return True
+    return False
+
+
+def re_split_entity_words(text: str) -> list[str]:
+    return [part for part in re.split(r"[^A-Za-z0-9]+", text) if part]
 
 
 def _discoveries_text(db_path: str | Path) -> str:
@@ -295,7 +311,12 @@ def _split_entity_note(args: str) -> tuple[str, str]:
     return entity.strip(), note.strip()
 
 
-def _set_status_command(command: str, args: str, operator_db_path: str | Path) -> CommandResult:
+def _set_status_command(
+    command: str,
+    args: str,
+    db_path: str | Path,
+    operator_db_path: str | Path,
+) -> CommandResult:
     entity, note = _split_entity_note(args)
     status = {
         "/watch": "watch",
@@ -303,7 +324,18 @@ def _set_status_command(command: str, args: str, operator_db_path: str | Path) -
         "/promote": "promoted",
         "/archive": "archived",
     }[command]
-    row = _upsert_operator_entity(operator_db_path, entity, status=status, note=note or None)
+    stats = _appearance_stats(entity, db_path)
+    row = _upsert_operator_entity(
+        operator_db_path,
+        entity,
+        status=status,
+        note=note or None,
+        appearance_count=stats["appearance_count"],
+        source_url_count=stats["source_url_count"],
+        first_seen_at=stats["first_seen_at"],
+        last_seen_at=stats["last_seen_at"],
+    )
+    record_entity_events(operator_db_path, entity, stats["rows"][:10])
     label = {
         "watch": "watch list",
         "ignore": "lower prominence",
@@ -313,12 +345,18 @@ def _set_status_command(command: str, args: str, operator_db_path: str | Path) -
     note_line = f"\nNote: {row['user_notes']}" if row.get("user_notes") else ""
     return CommandResult(
         command,
-        f"{row['display_name']} saved to operator {label}.\nPriority: {row['priority']}.{note_line}\n{DISCLAIMER}",
+        f"{row['display_name']} saved to operator {label}.\n"
+        f"Priority: {row['priority']}. Factual appearances tracked: {row['appearance_count']}."
+        f"{note_line}\n{DISCLAIMER}",
         mutated=True,
     )
 
 
-def _set_priority_command(args: str, operator_db_path: str | Path) -> CommandResult:
+def _set_priority_command(
+    args: str,
+    db_path: str | Path,
+    operator_db_path: str | Path,
+) -> CommandResult:
     if not args:
         raise ValueError("usage: /setpriority <entity> low|normal|high")
     parts = args.split()
@@ -328,7 +366,17 @@ def _set_priority_command(args: str, operator_db_path: str | Path) -> CommandRes
     entity = " ".join(parts[:-1]).strip()
     if not entity:
         raise ValueError("entity is required")
-    row = _upsert_operator_entity(operator_db_path, entity, status="watch", priority=priority)
+    stats = _appearance_stats(entity, db_path)
+    row = _upsert_operator_entity(
+        operator_db_path,
+        entity,
+        status="watch",
+        priority=priority,
+        appearance_count=stats["appearance_count"],
+        source_url_count=stats["source_url_count"],
+        first_seen_at=stats["first_seen_at"],
+        last_seen_at=stats["last_seen_at"],
+    )
     return CommandResult(
         "/setpriority",
         f"{row['display_name']} operator priority set to {row['priority']}.\n{DISCLAIMER}",
@@ -343,40 +391,22 @@ def _upsert_operator_entity(
     status: str,
     priority: str | None = None,
     note: str | None = None,
+    appearance_count: int | None = None,
+    source_url_count: int | None = None,
+    first_seen_at: str | None = None,
+    last_seen_at: str | None = None,
 ) -> dict[str, Any]:
-    if status not in VALID_STATUSES:
-        raise ValueError(f"invalid status: {status}")
-    if priority is not None and priority not in VALID_PRIORITIES:
-        raise ValueError(f"invalid priority: {priority}")
-    init_operator_db(operator_db_path)
-    key = operator_key(display_name)
-    now = _now()
-    with sqlite3.connect(operator_db_path) as con:
-        con.row_factory = sqlite3.Row
-        existing = con.execute(
-            "SELECT * FROM operator_entities WHERE entity_key = ?", (key,)
-        ).fetchone()
-        merged_note = note
-        if existing and note is None:
-            merged_note = existing["user_notes"]
-        con.execute(
-            """
-            INSERT INTO operator_entities (
-              entity_key, display_name, status, priority, user_notes, created_at, updated_at
-            )
-            VALUES (?, ?, ?, COALESCE(?, 'normal'), ?, ?, ?)
-            ON CONFLICT(entity_key) DO UPDATE SET
-              display_name = excluded.display_name,
-              status = excluded.status,
-              priority = COALESCE(excluded.priority, operator_entities.priority),
-              user_notes = COALESCE(excluded.user_notes, operator_entities.user_notes),
-              updated_at = excluded.updated_at
-            """,
-            (key, display_name, status, priority, merged_note, now, now),
-        )
-        con.commit()
-        row = con.execute("SELECT * FROM operator_entities WHERE entity_key = ?", (key,)).fetchone()
-        return dict(row)
+    return upsert_entity(
+        operator_db_path,
+        display_name,
+        status=status,
+        priority=priority,
+        note=note,
+        appearance_count=appearance_count,
+        source_url_count=source_url_count,
+        first_seen_at=first_seen_at,
+        last_seen_at=last_seen_at,
+    )
 
 
 def _notes_text(args: str, db_path: str | Path, operator_db_path: str | Path) -> str:
@@ -432,18 +462,37 @@ def _appearance_rows(entity: str, db_path: str | Path, *, limit: int) -> list[di
         con.row_factory = sqlite3.Row
         rows = con.execute(
             """
-            SELECT created_at, title, what_changed, event_type, source_id, run_id
-            FROM events
-            WHERE title LIKE ?
-               OR COALESCE(what_changed, '') LIKE ?
-               OR COALESCE(why_it_matters, '') LIKE ?
-               OR COALESCE(external_id, '') LIKE ?
-            ORDER BY created_at DESC, id DESC
+            SELECT e.created_at, e.title, e.what_changed, e.event_type, e.source_id,
+                   e.run_id, d.url AS source_url
+            FROM events AS e
+            LEFT JOIN source_documents AS d ON d.id = e.source_document_id
+            WHERE e.title LIKE ?
+               OR COALESCE(e.what_changed, '') LIKE ?
+               OR COALESCE(e.why_it_matters, '') LIKE ?
+               OR COALESCE(e.external_id, '') LIKE ?
+            ORDER BY e.created_at DESC, e.id DESC
             LIMIT ?
             """,
             (like, like, like, like, limit),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _appearance_stats(entity: str, db_path: str | Path) -> dict[str, Any]:
+    rows = _appearance_rows(entity, db_path, limit=50)
+    observed = [str(row["created_at"]) for row in rows if row.get("created_at")]
+    urls = {
+        row.get("source_url") or row.get("url")
+        for row in rows
+        if row.get("source_url") or row.get("url")
+    }
+    return {
+        "rows": rows,
+        "appearance_count": len(rows),
+        "source_url_count": len(urls),
+        "first_seen_at": min(observed) if observed else None,
+        "last_seen_at": max(observed) if observed else None,
+    }
 
 
 def _record_interaction(
@@ -454,7 +503,6 @@ def _record_interaction(
     user_text: str | None,
 ) -> None:
     init_operator_db(operator_db_path)
-    now = _now()
     entity_key = None
     if user_text:
         parts = user_text.strip().split(maxsplit=2)
@@ -464,14 +512,11 @@ def _record_interaction(
             except ValueError:
                 entity_key = None
     summary = result.text.splitlines()[0][:240] if result.text else ""
-    with sqlite3.connect(operator_db_path) as con:
-        con.execute(
-            """
-            INSERT INTO operator_interactions (
-              message_id, entity_key, command, user_text, response_summary, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (message_id, entity_key, result.command, user_text, summary, now),
-        )
-        con.commit()
+    record_interaction(
+        operator_db_path,
+        command=result.command,
+        message_id=message_id,
+        entity_key=entity_key,
+        user_text=user_text,
+        response_summary=summary,
+    )
