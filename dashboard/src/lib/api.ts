@@ -15,6 +15,7 @@ import type {
   OperatorEntitiesPage,
   OperatorEntityDetail,
   OperatorStatus,
+  MarketWatchlistPage,
   SourceHealth,
   WatchlistCompany,
 } from "./types";
@@ -50,6 +51,11 @@ export const api = {
       event: mockEvents({}).items.find((e) => e.id === id) || mockEvents({}).items[0],
     }),
   watchlist: () => get<WatchlistCompany[]>(`/api/watchlist`, mockWatchlist),
+  marketWatchlist: () =>
+    get<MarketWatchlistPage>(`/api/market/watchlist`, {
+      items: [],
+      source_note: "Market data unavailable while offline.",
+    }),
   sourceHealth: () => get<SourceHealth[]>(`/api/source-health`, mockSourceHealth),
   operatorEntities: (statuses?: OperatorStatus[]) => {
     const qs = new URLSearchParams();

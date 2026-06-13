@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 
 from peptide_watch.config import load_config
 from peptide_watch.database import connect_readonly
+from peptide_watch.market_data import watchlist_market_data
 from peptide_watch.relevance import DISCLAIMERS, briefing, discoveries_rows
 from peptide_watch.runtime import ledger
 from peptide_watch.web import queries
@@ -104,6 +105,18 @@ def create_app(
                 }
             )
         return out
+
+    @app.get("/api/market/watchlist")
+    def market_watchlist() -> dict[str, Any]:
+        return with_disclaimers(
+            {
+                "items": watchlist_market_data(app.state.config),
+                "source_note": (
+                    "Market data is context only, from public quote endpoints when available; "
+                    "it is not a recommendation, valuation, or price target."
+                ),
+            }
+        )
 
     # ----- events ----------------------------------------------------------- #
     @app.get("/api/events")

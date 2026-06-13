@@ -99,6 +99,30 @@ export interface WatchlistCompany {
   peptides: string[];
 }
 
+export interface MarketDataItem {
+  company_id: string;
+  name: string;
+  ticker: string | null;
+  symbol: string | null;
+  exchange: string | null;
+  status: "ok" | "partial" | "unavailable" | string;
+  provider: string;
+  price: number | null;
+  currency: string | null;
+  market_cap: number | null;
+  change_1d_pct: number | null;
+  change_7d_pct: number | null;
+  change_30d_pct: number | null;
+  as_of: string | null;
+  error: string | null;
+}
+
+export interface MarketWatchlistPage {
+  items: MarketDataItem[];
+  source_note: string;
+  disclaimers?: Disclaimers;
+}
+
 export interface SourceHealth {
   source_id: string;
   status: string;

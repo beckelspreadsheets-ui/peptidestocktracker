@@ -87,6 +87,41 @@ def test_config_and_watchlist(client):
     assert "ticker" in wl[0] and "tier" in wl[0]
 
 
+def test_market_watchlist_endpoint_is_context_only(client, monkeypatch):
+    import peptide_watch.web.app as web_app
+
+    c, _ = client
+
+    def fake_market_data(_config):
+        return [
+            {
+                "company_id": "hims",
+                "name": "Hims & Hers Health",
+                "ticker": "HIMS",
+                "symbol": "HIMS",
+                "exchange": "NYSE",
+                "status": "ok",
+                "provider": "test",
+                "price": 20.0,
+                "currency": "USD",
+                "market_cap": 1_000_000_000,
+                "change_1d_pct": 1.0,
+                "change_7d_pct": 7.0,
+                "change_30d_pct": 30.0,
+                "as_of": "2026-06-13T00:00:00+00:00",
+                "error": None,
+            }
+        ]
+
+    monkeypatch.setattr(web_app, "watchlist_market_data", fake_market_data)
+    body = c.get("/api/market/watchlist").json()
+
+    assert body["items"][0]["company_id"] == "hims"
+    assert body["items"][0]["market_cap"] == 1_000_000_000
+    assert "not a recommendation" in body["source_note"]
+    assert "disclaimers" in body
+
+
 def test_events_list_pagination_and_compliance(client):
     c, _ = client
     body = c.get("/api/events").json()

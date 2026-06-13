@@ -43,3 +43,18 @@ export function titleCase(s: string): string {
 export function cleanCompanyName(name: string): string {
   return name.replace(/\s*\(CIK[^)]*\)/gi, "").replace(/\s{2,}/g, " ").trim();
 }
+
+export function compactMoney(value: number | null | undefined, currency = "USD"): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  const prefix = currency === "USD" ? "$" : "";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${prefix}${(value / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${prefix}${(value / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${prefix}${(value / 1_000).toFixed(2)}K`;
+  return `${prefix}${value.toFixed(2)}`;
+}
+
+export function pct(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}

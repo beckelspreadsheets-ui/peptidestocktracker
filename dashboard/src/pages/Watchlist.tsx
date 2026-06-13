@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
-import type { WatchlistCompany } from "../lib/types";
+import { compactMoney, pct, relativeTime } from "../lib/format";
+import type { MarketDataItem, MarketWatchlistPage, WatchlistCompany } from "../lib/types";
 import { useFetch } from "../hooks/useFetch";
 import { ComplianceFooter } from "../components/ComplianceFooter";
 import { Panel, Tag } from "../components/ui";
@@ -14,8 +15,12 @@ const TIER_CLS: Record<number, string> = {
 
 export function Watchlist() {
   const { data } = useFetch<WatchlistCompany[]>(() => api.watchlist(), []);
+  const { data: market } = useFetch<MarketWatchlistPage>(() => api.marketWatchlist(), []);
   const navigate = useNavigate();
   const [sort, setSort] = useState<keyof WatchlistCompany>("tier");
+  const marketByCompany = useMemo(() => {
+    return new Map((market?.items || []).map((item) => [item.company_id, item]));
+  }, [market]);
 
   const rows = useMemo(() => {
     const list = [...(data || [])];
@@ -51,6 +56,9 @@ export function Watchlist() {
                 <Th k="public_private">Type</Th>
                 <Th k="liquidity_risk">Liquidity</Th>
                 <th className="px-3 py-2 text-left font-mono text-[10px] uppercase tracking-wider text-ink-3">
+                  Market
+                </th>
+                <th className="px-3 py-2 text-left font-mono text-[10px] uppercase tracking-wider text-ink-3">
                   Peptides
                 </th>
               </tr>
@@ -80,6 +88,9 @@ export function Watchlist() {
                       <span className="text-ink-3">—</span>
                     )}
                   </td>
+                  <td className="min-w-[220px] px-3 py-2.5">
+                    <MarketCell item={marketByCompany.get(c.id)} />
+                  </td>
                   <td className="px-3 py-2.5">
                     <div className="flex flex-wrap gap-1">
                       {c.peptides.slice(0, 3).map((p) => (
@@ -96,7 +107,40 @@ export function Watchlist() {
           </table>
         </div>
       </Panel>
-      <ComplianceFooter />
+      {market?.source_note && (
+        <div className="font-mono text-[10px] leading-relaxed text-ink-3">{market.source_note}</div>
+      )}
+      <ComplianceFooter disclaimers={market?.disclaimers} />
     </div>
+  );
+}
+
+function MarketCell({ item }: { item?: MarketDataItem }) {
+  if (!item || item.status === "unavailable") {
+    return <span className="font-mono text-[11px] text-ink-3">unavailable</span>;
+  }
+  const currency = item.currency || "USD";
+  return (
+    <div className="space-y-1 font-mono">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+        <span className="text-ink">MC {compactMoney(item.market_cap, currency)}</span>
+        <span className="text-ink-3">Px {compactMoney(item.price, currency)}</span>
+      </div>
+      <div className="flex flex-wrap gap-1 text-[10px]">
+        <Move value={item.change_1d_pct} label="1d" />
+        <Move value={item.change_7d_pct} label="7d" />
+        <Move value={item.change_30d_pct} label="30d" />
+      </div>
+      <div className="text-[9px] text-ink-3">{relativeTime(item.as_of)}</div>
+    </div>
+  );
+}
+
+function Move({ label, value }: { label: string; value: number | null }) {
+  const tone = value === null ? "text-ink-3" : value >= 0 ? "text-ok" : "text-high";
+  return (
+    <span className={`rounded border border-line px-1 py-0.5 ${tone}`}>
+      {label} {pct(value)}
+    </span>
   );
 }
