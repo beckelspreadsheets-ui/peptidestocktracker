@@ -1,8 +1,8 @@
-import { ChevronRight, ExternalLink, Sparkles } from "lucide-react";
+import { ChevronRight, ExternalLink, Eye, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { cleanCompanyName, relativeTime, titleCase } from "../lib/format";
-import type { Briefing, EventItem } from "../lib/types";
+import type { Briefing, EventItem, OperatorEntitiesPage, OperatorEntity } from "../lib/types";
 import { useFetch } from "../hooks/useFetch";
 import { useSeen } from "../hooks/useSeen";
 import { ComplianceFooter } from "../components/ComplianceFooter";
@@ -19,6 +19,10 @@ import {
 
 export function Dashboard({ onLive }: { onLive: (b: Briefing, live: boolean) => void }) {
   const { data, live, loading } = useFetch<Briefing>(() => api.briefing(25), []);
+  const { data: operator } = useFetch<OperatorEntitiesPage>(
+    () => api.operatorEntities(["watch", "promoted"]),
+    [],
+  );
   const { isNew } = useSeen();
   useEffect(() => {
     if (data) onLive(data, live);
@@ -49,6 +53,8 @@ export function Dashboard({ onLive }: { onLive: (b: Briefing, live: boolean) => 
 
         {/* Right rail */}
         <div className="space-y-5">
+          <OperatorFocusPanel entities={operator?.items || []} />
+
           <Panel title={`Discovery queue · ${data.discoveries.length}`}>
             <div className="row-divide">
               {data.discoveries.length === 0 && <Empty>No new filers.</Empty>}
@@ -179,6 +185,39 @@ function CountsHeader({ counts }: { counts: Briefing["counts"] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function OperatorFocusPanel({ entities }: { entities: OperatorEntity[] }) {
+  return (
+    <Panel
+      title={
+        <span className="flex items-center gap-2">
+          <Eye size={12} className="text-accent" /> Seth is watching
+        </span>
+      }
+    >
+      <div className="row-divide">
+        {entities.length === 0 && <Empty>No watched entities yet.</Empty>}
+        {entities.slice(0, 5).map((entity) => (
+          <a
+            key={entity.entity_key}
+            href={`/operator/${entity.entity_key}`}
+            className="block px-4 py-2.5 transition hover:bg-panel-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-[13px] text-ink">{entity.display_name}</div>
+                <div className="mt-0.5 font-mono text-[10px] text-ink-3">
+                  {entity.status} · {entity.appearance_count} appearance{entity.appearance_count === 1 ? "" : "s"}
+                </div>
+              </div>
+              <Tag tone={entity.priority === "high" ? "accent" : "neutral"}>{entity.priority}</Tag>
+            </div>
+          </a>
+        ))}
+      </div>
+    </Panel>
   );
 }
 

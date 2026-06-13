@@ -2,6 +2,9 @@ import type {
   Briefing,
   EventItem,
   EventsPage,
+  OperatorDeadlinesPage,
+  OperatorEntitiesPage,
+  OperatorEntityDetail,
   SourceHealth,
   WatchlistCompany,
 } from "./types";
@@ -223,3 +226,65 @@ export const mockSourceHealth: SourceHealth[] = [
   { source_id: "openfda_shortages", status: "done", attempt: 1, last_error: null, finished_at: iso(3) },
   { source_id: "uspto_patents", status: "skipped", attempt: 0, last_error: "no key", finished_at: iso(3) },
 ];
+
+export const mockOperatorEntities: OperatorEntitiesPage = {
+  items: [
+    {
+      entity_key: "bhic",
+      display_name: "BHIC",
+      entity_type: "company",
+      status: "watch",
+      priority: "high",
+      first_seen_at: iso(72),
+      last_seen_at: iso(4),
+      appearance_count: 3,
+      source_url_count: 2,
+      has_notes: true,
+      created_by: "telegram",
+      created_at: iso(72),
+      updated_at: iso(4),
+      memory_event_count: 2,
+      latest_memory_event_at: iso(4),
+    },
+    {
+      entity_key: "cohbar",
+      display_name: "CohBar",
+      entity_type: "company",
+      status: "ignore",
+      priority: "low",
+      first_seen_at: iso(120),
+      last_seen_at: iso(36),
+      appearance_count: 1,
+      source_url_count: 1,
+      has_notes: false,
+      created_by: "telegram",
+      created_at: iso(120),
+      updated_at: iso(36),
+      memory_event_count: 1,
+      latest_memory_event_at: iso(36),
+    },
+  ],
+  counts: { archived: 0, ignore: 1, promoted: 0, watch: 1 },
+  disclaimers: DISCLAIMERS,
+};
+
+export const mockOperatorDetail: OperatorEntityDetail = {
+  entity: mockOperatorEntities.items[0],
+  source_facts: [
+    {
+      id: 1,
+      run_id: "20260612T224433-4b7a67e7",
+      event_type: "new_company_peptide_disclosure",
+      source_family: "sec_fulltext",
+      source_url: "https://www.sec.gov/",
+      observed_at: iso(4),
+      fact_summary: "Confirmed fact: BHIC appeared in public SEC full-text discovery.",
+    },
+  ],
+  disclaimers: DISCLAIMERS,
+};
+
+export const mockOperatorDeadlines: OperatorDeadlinesPage = {
+  items: mockBriefing.active_comment_periods,
+  disclaimers: DISCLAIMERS,
+};

@@ -268,6 +268,13 @@ Acceptance:
 
 Purpose: make the dashboard reflect operator state, not just raw tracker data.
 
+Status as of 2026-06-13: complete for the read-only cockpit layer. The API now
+exposes read-only operator entity list/detail/deadline endpoints, the main
+cockpit includes a "Seth is watching" panel, and `/operator` plus
+`/operator/{entity_key}` show followed/promoted/ignored/archived workflow state
+with source facts, source links, and run ids. Dashboard mutation endpoints were
+intentionally not added; Telegram remains the only operator mutation surface.
+
 Cockpit additions:
 - "Seth is watching" panel.
 - Ignored/archive filter.
@@ -286,9 +293,6 @@ Access model:
 API additions:
 - `GET /api/operator/entities`
 - `GET /api/operator/entities/{entity_key}`
-- `POST /api/operator/watch`
-- `POST /api/operator/ignore`
-- `POST /api/operator/promote`
 - `GET /api/operator/deadlines`
 
 Acceptance:

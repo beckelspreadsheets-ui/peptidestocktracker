@@ -201,6 +201,13 @@ Acceptance:
 
 Goal: make dashboard reflect operator memory.
 
+Status as of 2026-06-13: complete for the read-only cockpit layer. FastAPI exposes
+read-only operator entity list/detail/deadline endpoints. The dashboard has a
+main "Seth is watching" panel plus `/operator` and `/operator/{entity_key}` views
+for followed/promoted/ignored/archived state, deadline review, and factual source
+history with links and run ids. No dashboard mutation endpoint was added; Telegram
+commands remain the mutation surface.
+
 Tasks:
 - API endpoints for operator entities.
 - Cockpit panels: Seth is watching, ignored/archive filter, deadlines, entity detail.

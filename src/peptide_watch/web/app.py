@@ -26,11 +26,13 @@ DEFAULT_CORS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 def create_app(
     *,
     db_path: str | Path = "data/watch.db",
+    operator_db_path: str | Path = "data/operator_state.db",
     config_dir: str | Path = "config",
     cors_origins: list[str] | None = None,
     dashboard_dist: str | Path | None = None,
 ) -> FastAPI:
     db_path = Path(db_path)
+    operator_db_path = Path(operator_db_path)
     config = load_config(config_dir)  # fail fast if config is broken
     dist = Path(dashboard_dist).resolve() if dashboard_dist else None
 
@@ -45,6 +47,7 @@ def create_app(
         allow_headers=["*"],
     )
     app.state.db_path = db_path
+    app.state.operator_db_path = operator_db_path
     app.state.config = config
 
     def get_db():
@@ -155,6 +158,38 @@ def create_app(
     @app.get("/api/source-health")
     def source_health(db=Depends(get_db)) -> list[dict[str, Any]]:
         return queries.source_health(db)
+
+    @app.get("/api/operator/entities")
+    def operator_entities(
+        status: list[str] | None = Query(default=None),
+    ) -> dict[str, Any]:
+        try:
+            items = queries.list_operator_entities(app.state.operator_db_path, statuses=status)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        counts = {name: 0 for name in sorted(queries.VALID_OPERATOR_STATUSES)}
+        for item in items:
+            counts[item["status"]] = counts.get(item["status"], 0) + 1
+        return with_disclaimers({"items": items, "counts": counts})
+
+    @app.get("/api/operator/entities/{entity_key}")
+    def operator_entity_detail(
+        entity_key: str,
+        limit: int = Query(30, ge=1, le=100),
+    ) -> dict[str, Any]:
+        detail = queries.get_operator_entity_detail(
+            app.state.operator_db_path,
+            entity_key=entity_key,
+            limit=limit,
+        )
+        if detail is None:
+            raise HTTPException(status_code=404, detail="operator entity not found")
+        return with_disclaimers(detail)
+
+    @app.get("/api/operator/deadlines")
+    def operator_deadlines(db=Depends(get_db)) -> dict[str, Any]:
+        data = briefing(db, app.state.config, limit=1)
+        return with_disclaimers({"items": data["active_comment_periods"]})
 
     @app.get("/api/job-runs")
     def job_runs(

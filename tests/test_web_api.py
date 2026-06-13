@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from peptide_watch.database import init_db  # noqa: E402
 from peptide_watch.events import insert_event  # noqa: E402
+from peptide_watch.operator_memory import record_entity_events, upsert_entity  # noqa: E402
 from peptide_watch.runtime import ledger  # noqa: E402
 from peptide_watch.web.app import create_app  # noqa: E402
 
@@ -136,6 +137,60 @@ def test_source_health_and_job_runs(client):
     assert fda["status"] == "error" and "403" in fda["last_error"]
     runs = c.get("/api/job-runs").json()
     assert runs and runs[0]["status"] == "completed"
+
+
+def test_operator_entities_are_read_only_and_public_safe(client, tmp_path):
+    _, db_path = client
+    operator_db = tmp_path / "operator_state.db"
+    row = upsert_entity(
+        operator_db,
+        "BHIC",
+        status="watch",
+        priority="high",
+        note="operator note should not be exposed through read-only cockpit API",
+        appearance_count=2,
+        source_url_count=1,
+    )
+    record_entity_events(
+        operator_db,
+        "BHIC",
+        [
+            {
+                "run_id": "run-123",
+                "event_type": "new_company_peptide_disclosure",
+                "source_id": "sec_fulltext",
+                "source_url": "https://www.sec.gov/example",
+                "created_at": "2026-06-13T00:00:00+00:00",
+                "what_changed": "Confirmed fact: BHIC disclosed a target peptide in a public filing.",
+            }
+        ],
+    )
+    upsert_entity(operator_db, "CohBar", status="ignore", priority="low")
+
+    scoped = TestClient(
+        create_app(db_path=db_path, config_dir=CONFIG_DIR, operator_db_path=operator_db)
+    )
+    body = scoped.get("/api/operator/entities?status=watch").json()
+    assert [item["entity_key"] for item in body["items"]] == [row["entity_key"]]
+    assert body["items"][0]["has_notes"] is True
+    assert "user_notes" not in body["items"][0]
+    assert "disclaimers" in body
+
+    detail = scoped.get("/api/operator/entities/bhic").json()
+    assert detail["entity"]["display_name"] == "BHIC"
+    assert "user_notes" not in detail["entity"]
+    assert detail["source_facts"][0]["run_id"] == "run-123"
+    assert detail["source_facts"][0]["source_url"] == "https://www.sec.gov/example"
+
+    assert scoped.post("/api/operator/watch").status_code in {404, 405}
+    assert scoped.get("/api/operator/entities?status=bad").status_code == 400
+
+
+def test_operator_deadlines_endpoint_uses_tracker_facts(client):
+    c, _ = client
+    body = c.get("/api/operator/deadlines").json()
+    assert "items" in body
+    assert "disclaimers" in body
 
 
 def test_api_connection_is_read_only(client):

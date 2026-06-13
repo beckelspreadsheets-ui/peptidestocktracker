@@ -1,10 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { Activity, LayoutGrid, List, Radar, Stethoscope } from "lucide-react";
+import { Activity, LayoutGrid, List, Radar, SlidersHorizontal, Stethoscope } from "lucide-react";
 
 const NAV = [
   { to: "/", label: "Cockpit", icon: LayoutGrid, end: true },
   { to: "/events", label: "Events", icon: List },
   { to: "/watchlist", label: "Watchlist", icon: Radar },
+  { to: "/operator", label: "Operator", icon: SlidersHorizontal },
   { to: "/health", label: "Source health", icon: Stethoscope },
 ];
 

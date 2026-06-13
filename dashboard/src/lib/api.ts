@@ -1,5 +1,23 @@
-import { mockBriefing, mockEvents, mockWatchlist, mockSourceHealth } from "./mock";
-import type { Briefing, EventItem, EventsPage, SourceHealth, WatchlistCompany } from "./types";
+import {
+  mockBriefing,
+  mockEvents,
+  mockOperatorDeadlines,
+  mockOperatorDetail,
+  mockOperatorEntities,
+  mockWatchlist,
+  mockSourceHealth,
+} from "./mock";
+import type {
+  Briefing,
+  EventItem,
+  EventsPage,
+  OperatorDeadlinesPage,
+  OperatorEntitiesPage,
+  OperatorEntityDetail,
+  OperatorStatus,
+  SourceHealth,
+  WatchlistCompany,
+} from "./types";
 
 // Default to relative URLs: works same-origin when the API serves the built
 // dashboard, and via the Vite dev proxy in development. Override with
@@ -33,6 +51,22 @@ export const api = {
     }),
   watchlist: () => get<WatchlistCompany[]>(`/api/watchlist`, mockWatchlist),
   sourceHealth: () => get<SourceHealth[]>(`/api/source-health`, mockSourceHealth),
+  operatorEntities: (statuses?: OperatorStatus[]) => {
+    const qs = new URLSearchParams();
+    statuses?.forEach((status) => qs.append("status", status));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    const fallback = statuses?.length
+      ? { ...mockOperatorEntities, items: mockOperatorEntities.items.filter((item) => statuses.includes(item.status)) }
+      : mockOperatorEntities;
+    return get<OperatorEntitiesPage>(`/api/operator/entities${suffix}`, fallback);
+  },
+  operatorEntity: (entityKey: string) =>
+    get<OperatorEntityDetail>(
+      `/api/operator/entities/${encodeURIComponent(entityKey)}`,
+      mockOperatorDetail,
+    ),
+  operatorDeadlines: () =>
+    get<OperatorDeadlinesPage>(`/api/operator/deadlines`, mockOperatorDeadlines),
 };
 
 export { BASE as API_BASE };

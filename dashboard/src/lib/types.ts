@@ -114,3 +114,51 @@ export interface EventsPage {
   offset: number;
   disclaimers?: Disclaimers;
 }
+
+export type OperatorStatus = "watch" | "promoted" | "ignore" | "archived";
+export type OperatorPriority = "low" | "normal" | "high";
+
+export interface OperatorEntity {
+  entity_key: string;
+  display_name: string;
+  entity_type: string | null;
+  status: OperatorStatus;
+  priority: OperatorPriority;
+  first_seen_at: string;
+  last_seen_at: string;
+  appearance_count: number;
+  source_url_count: number;
+  has_notes: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  memory_event_count: number;
+  latest_memory_event_at: string | null;
+}
+
+export interface OperatorEntitiesPage {
+  items: OperatorEntity[];
+  counts: Record<OperatorStatus, number>;
+  disclaimers?: Disclaimers;
+}
+
+export interface OperatorSourceFact {
+  id: number;
+  run_id: string | null;
+  event_type: string | null;
+  source_family: string | null;
+  source_url: string | null;
+  observed_at: string;
+  fact_summary: string;
+}
+
+export interface OperatorEntityDetail {
+  entity: OperatorEntity;
+  source_facts: OperatorSourceFact[];
+  disclaimers?: Disclaimers;
+}
+
+export interface OperatorDeadlinesPage {
+  items: CommentPeriod[];
+  disclaimers?: Disclaimers;
+}

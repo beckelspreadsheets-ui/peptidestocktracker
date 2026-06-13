@@ -8,6 +8,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Events } from "./pages/Events";
 import { Watchlist } from "./pages/Watchlist";
 import { SourceHealth } from "./pages/SourceHealth";
+import { OperatorMemory } from "./pages/OperatorMemory";
 import { useFetch } from "./hooks/useFetch";
 import { api } from "./lib/api";
 import type { Briefing, WatchlistCompany } from "./lib/types";
@@ -44,6 +45,8 @@ export default function App() {
                 <Route path="/" element={<Dashboard onLive={onLive} />} />
                 <Route path="/events" element={<Events />} />
                 <Route path="/watchlist" element={<Watchlist />} />
+                <Route path="/operator" element={<OperatorMemory />} />
+                <Route path="/operator/:entityKey" element={<OperatorMemory />} />
                 <Route path="/health" element={<SourceHealth />} />
               </Routes>
             </div>
