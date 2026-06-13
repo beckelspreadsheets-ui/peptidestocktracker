@@ -7,6 +7,7 @@ or price targets.
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
@@ -89,19 +90,25 @@ def parse_nasdaq_market_cap(payload: dict[str, Any]) -> int | None:
 
 
 class MarketDataProvider:
-    def __init__(self, *, timeout_seconds: float = 4.0):
+    def __init__(self, *, timeout_seconds: float = 2.5, max_workers: int = 6):
         self.timeout_seconds = timeout_seconds
+        self.max_workers = max_workers
 
     def watchlist_market_data(self, config: WatchConfig) -> list[dict[str, Any]]:
-        rows: list[dict[str, Any]] = []
+        companies = list(config.companies)
+        if not companies:
+            return []
+        workers = max(1, min(self.max_workers, len(companies)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(self._company_market_data, companies))
+
+    def _company_market_data(self, company: CompanyConfig) -> dict[str, Any]:
         with httpx.Client(
             timeout=self.timeout_seconds,
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             follow_redirects=True,
         ) as client:
-            for company in config.companies:
-                rows.append(self.company_market_data(company, client))
-        return rows
+            return self.company_market_data(company, client)
 
     def company_market_data(
         self,

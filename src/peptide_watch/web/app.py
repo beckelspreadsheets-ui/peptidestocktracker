@@ -7,6 +7,7 @@ DB the cron scanner owns. Handlers are sync (sqlite runs in the threadpool).
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,7 @@ def create_app(
     app.state.db_path = db_path
     app.state.operator_db_path = operator_db_path
     app.state.config = config
+    app.state.market_cache = {"expires_at": 0.0, "payload": None}
 
     def get_db():
         connection = connect_readonly(app.state.db_path)
@@ -108,15 +110,20 @@ def create_app(
 
     @app.get("/api/market/watchlist")
     def market_watchlist() -> dict[str, Any]:
-        return with_disclaimers(
-            {
-                "items": watchlist_market_data(app.state.config),
-                "source_note": (
-                    "Market data is context only, from public quote endpoints when available; "
-                    "it is not a recommendation, valuation, or price target."
-                ),
-            }
-        )
+        now = time.monotonic()
+        cache = app.state.market_cache
+        if cache["payload"] is not None and now < cache["expires_at"]:
+            return with_disclaimers(dict(cache["payload"]))
+        payload = {
+            "items": watchlist_market_data(app.state.config),
+            "source_note": (
+                "Market data is context only, from public quote endpoints when available; "
+                "it is not a recommendation, valuation, or price target."
+            ),
+        }
+        cache["payload"] = payload
+        cache["expires_at"] = now + 600
+        return with_disclaimers(dict(payload))
 
     # ----- events ----------------------------------------------------------- #
     @app.get("/api/events")
